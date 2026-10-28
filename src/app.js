@@ -1,4 +1,5 @@
 import { Chess } from 'chess.js';
+import { Moteur, NIVEAUX, evaluerPositions, calculer, formatEval } from './analyse.js';
 
 const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzeXJyY3Jrbnhka2RzeGtvb29hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyODQyMzMsImV4cCI6MjEwNjg2MDIzM30.4ks8YNW4oYoPbSOiBT4Y9UCotErus8aydDaQUDm7crs';
@@ -265,19 +266,28 @@ function vueAccueil() {
   if (per.length) v.append(rec);
 }
 
-function ligPartie(g) {
+function detLigne(g) {
   const o = famille(g.o);
-  const det = o.fam === 'Ouverture inconnue' ? '' : o.fam;
-  return h('button', { class: 'partie', onclick: () => ouvrirPartie(g) },
+  const ra = S.ana && S.ana[g.u]; const cn = ra ? (g.co === 'blancs' ? ra.cw : ra.cb) : null;
+  const det = [o.fam === 'Ouverture inconnue' ? '' : o.fam, cn ? (cn.g ? pl(cn.g, 'gaffe') : 'sans gaffe') : ''].filter(Boolean).join(' / ');
+  return (g.issue === 'g' ? 'Victoire' : g.issue === 'p' ? 'Défaite' : 'Nulle') + (g.issue === 'g' ? ` par ${FIN_GAGNE[g.ra] || '—'}` : g.issue === 'p' ? ` par ${FIN_PERDU[g.res] || g.res}` : '') + (det ? ' / ' + det : '');
+}
+function majBadge(u) {
+  const g = PARTIES.find(x => x.u === u); if (!g) return;
+  $$('.partie').forEach(e => { if (e.dataset.u === u) { const d = $('.det', e); if (d) d.textContent = detLigne(g); } });
+}
+function ligPartie(g) {
+  return h('button', { class: 'partie', 'data-u': g.u, onclick: () => ouvrirPartie(g) },
     h('span', { class: 'marque ' + g.issue }),
-    h('span', { class: 'corps' }, h('div', { class: 'adv' }, esc(g.adv), h('span', {}, g.ea ?? '')), h('div', { class: 'det' }, (g.issue === 'g' ? 'Victoire' : g.issue === 'p' ? 'Défaite' : 'Nulle') + (g.issue === 'g' ? ` par ${FIN_GAGNE[g.ra] || '—'}` : g.issue === 'p' ? ` par ${FIN_PERDU[g.res] || g.res}` : '') + (det ? ' / ' + det : ''))),
+    h('span', { class: 'corps' }, h('div', { class: 'adv' }, esc(g.adv), h('span', {}, g.ea ?? '')), h('div', { class: 'det' }, detLigne(g))),
     h('span', { class: 'droite' }, g.delta != null ? h('div', { class: 'delta ' + (g.delta > 0 ? 'pos' : g.delta < 0 ? 'neg' : 'zero') }, signe(g.delta)) : h('div', { class: 'delta zero' }, '—'),
       g.p != null && h('div', { class: 'prec' }, g.p.toFixed(0) + ' %')));
 }
 
 function vueParties() {
   const v = $('#v-parties'); v.innerHTML = '';
-  v.append(h('div', { class: 'entete' }, h('h1', {}, 'Parties')));
+  v.append(h('div', { class: 'entete' }, h('h1', {}, 'Parties')), h('p', { class: 'statut-auto statut-liste' }));
+  majStatut();
   const f = S.filtre;
   const grp = (cle, opts) => opts.map(([k, l]) => h('button', { 'aria-pressed': f[cle] === k, onclick: () => { f[cle] = k; S.nbListe = 60; vueParties(); } }, l));
   v.append(h('div', { class: 'filtres' },
@@ -343,6 +353,13 @@ function vueReglages() {
   const btn = h('button', { class: 'btn', onclick: () => synchroniser(btn, etat) }, 'Synchroniser maintenant');
   if (S.syncEnCours) { btn.disabled = true; btn.textContent = 'Synchronisation en cours'; }
   v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Mettre à jour mes parties'), h('p', {}, 'Une mise à jour automatique a lieu chaque nuit. Utilise ce bouton pour récupérer tes dernières parties tout de suite (compte environ une minute).'), btn, etat));
+  const niv = h('div', { class: 'filtres', style: 'padding:0 0 10px' }, ...Object.entries(NIVEAUX).map(([k, nv]) => h('button', { 'aria-pressed': S.prof === k, onclick: () => { S.prof = k; store.set('ec_prof', k); vueReglages(); } }, nv.nom)));
+  v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Analyse des parties'),
+    h('p', {}, `Niveau ${NIVEAUX[S.prof].nom.toLowerCase()} : ${NIVEAUX[S.prof].det}. Plus le niveau est élevé, plus l’analyse est fiable et longue.`), niv,
+    h('p', { class: 'statut-auto' }),
+    h('button', { class: 'btn discret', onclick: () => { S.auto = !S.auto; store.set('ec_auto', S.auto); if (S.auto) autoAnalyse(); vueReglages(); } }, S.auto ? 'Désactiver l’analyse automatique' : 'Activer l’analyse automatique'),
+    h('p', { style: 'margin:12px 0 0' }, 'L’analyse tourne dans ton téléphone : elle peut le faire chauffer et consommer de la batterie. Elle n’avance que lorsque l’appli est ouverte.')));
+  majStatut();
   const nouv = h('input', { class: 'champ', type: 'password', placeholder: 'Nouveau code (6 caractères minimum)', autocomplete: 'new-password' });
   const msg = h('p', { style: 'margin:0' });
   v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Code d’accès'), h('p', {}, 'Ce code protège tes données. Il est enregistré sur cet appareil.'), nouv,
@@ -364,6 +381,7 @@ async function charger(silencieux = true) {
     const brut = await rpc('echecs_resume', { p_code: S.code });
     S.data = brut; store.set('ec_data', brut); PARTIES = preparer(brut);
     try { const e = await rpc('echecs_sync_etat', { p_code: S.code }); S.derniere = e.derniere_synchro; } catch {}
+    try { const l = await rpc('echecs_analyses_liste', { p_code: S.code }); const m = {}; l.forEach(x => { m[x.u] = x.r; }); S.ana = m; store.set('ec_ana', m); } catch {}
     return true;
   } catch (e) {
     if (/Code incorrect/.test(e.message)) { S.code = null; store.del('ec_code'); afficherAcces('Code incorrect.'); return false; }
@@ -382,36 +400,120 @@ async function synchroniser(btn, etat) {
       const e = await rpc('echecs_sync_etat', { p_code: S.code });
       if (e.en_attente === 0) break;
     }
-    await charger(false); rendre();
+    await charger(false); rendre(); autoAnalyse();
     const nb = PARTIES.length - avant; toast(nb > 0 ? `${nb} nouvelle${nb > 1 ? 's' : ''} partie${nb > 1 ? 's' : ''} récupérée${nb > 1 ? 's' : ''}` : 'Tout est à jour');
   } catch (e) { toast(e.message || 'La synchronisation a échoué'); }
   S.syncEnCours = false; if (S.tab === 'reglages') vueReglages();
 }
 
-/* ---------- rejeu ---------- */
+/* ---------- analyse et rejeu ---------- */
+const MOTEUR_URL = 'engine/stockfish-19-lite-single.js';
+let moteur = null;
+const getMoteur = () => (moteur = moteur || new Moteur(MOTEUR_URL));
+let verrou = Promise.resolve();
+const exclusif = fn => { const p = verrou.then(fn, fn); verrou = p.catch(() => {}); return p; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+S.ana = store.get('ec_ana', {});
+S.prof = store.get('ec_prof', 'pousse');
+S.auto = store.get('ec_auto', true);
+S.manuel = 0; S.autoErr = {}; S.autoEtat = null;
+
+function positionsDe(pgn) {
+  const ch = new Chess(); ch.loadPgn(pgn);
+  const coups = ch.history({ verbose: true });
+  const r = new Chess();
+  const pos = [{ fen: r.fen(), fin: null }];
+  for (const c of coups) {
+    r.move(c.san);
+    pos.push({ fen: r.fen(), fin: r.isCheckmate() ? 'mat' : (r.isStalemate() || r.isInsufficientMaterial()) ? 'nulle' : null });
+  }
+  return { coups, pos };
+}
+const uciDe = c => c.from + c.to + (c.promotion || '');
+const sanDe = (fen, uci) => {
+  try { const c = new Chess(fen); return c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] }).san; } catch { return uci; }
+};
+
+async function analyserPartie(g, pgn, progres, annule) {
+  const { pos } = positionsDe(pgn);
+  const ms = NIVEAUX[S.prof].ms;
+  const ev = await exclusif(() => evaluerPositions(getMoteur(), pos, ms, progres, annule));
+  if (!ev) return null;
+  const calc = calculer(ev, g.co === 'blancs' ? 'w' : 'b', g.issue);
+  const plies = ev.map(x => ({ e: x.e, b: x.b }));
+  try { await rpc('echecs_analyse_ecrire', { p_code: S.code, p_url: g.u, p_moteur: 'stockfish-19-lite-single', p_temps_ms: ms, p_plies: plies, p_resume: calc.resume }); } catch {}
+  S.ana[g.u] = calc.resume; store.set('ec_ana', S.ana); majBadge(g.u);
+  return { plies, calc };
+}
+
+/* analyse automatique des dernières parties */
+const recentes = () => PARTIES.filter(g => g.r === 'chess').slice(-30);
+function prochaineAuto() { return recentes().slice().reverse().find(g => !S.ana[g.u] && !S.autoErr[g.u]); }
+function majStatut() {
+  const total = recentes().length, faites = recentes().filter(g => S.ana[g.u]).length;
+  let t;
+  if (!S.auto) t = `Analyse automatique désactivée. ${faites} sur ${total} parties récentes analysées.`;
+  else if (S.autoEtat && S.autoEtat.n) t = `Analyse en cours : position ${S.autoEtat.i} sur ${S.autoEtat.n}. ${faites} sur ${total} parties récentes analysées.`;
+  else if (faites >= total) t = `Tes ${total} dernières parties sont analysées.`;
+  else t = `${faites} sur ${total} parties récentes analysées. L’analyse reprend quand l’appli est ouverte.`;
+  $$('.statut-auto').forEach(e => { e.textContent = t; });
+}
+async function autoAnalyse() {
+  if (S.autoRun || !S.code) return;
+  S.autoRun = true;
+  try {
+    while (S.auto && S.code) {
+      if (document.hidden) { await new Promise(r => document.addEventListener('visibilitychange', r, { once: true })); continue; }
+      if (S.manuel > 0) { await sleep(2000); continue; }
+      const g = prochaineAuto(); if (!g) break;
+      S.autoEtat = { u: g.u, i: 0, n: 0 }; majStatut();
+      try {
+        const pgn = await rpc('echecs_partie', { p_code: S.code, p_url: g.u });
+        await analyserPartie(g, pgn, (i, n) => { S.autoEtat.i = i; S.autoEtat.n = n; if (i % 4 === 0) majStatut(); }, () => !S.auto || S.manuel > 0 || !S.code);
+        if (!S.ana[g.u] && S.auto && S.manuel === 0) S.autoErr[g.u] = 1;
+      } catch (e) { S.autoErr[g.u] = 1; if (/démarrer/.test(e.message)) break; }
+    }
+  } finally { S.autoRun = false; S.autoEtat = null; majStatut(); }
+}
+
 const GLYPHE = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+const SYMB = { i: '?!', e: '?', g: '??' };
+const NOM_CLS = { i: 'imprécision', e: 'erreur', g: 'gaffe' };
+const pl = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+
 async function ouvrirPartie(g) {
   const f = $('#feuille'); f.classList.add('on'); document.body.style.overflow = 'hidden';
   const in_ = h('div', { class: 'in' }, h('div', { class: 'charge' }, 'Chargement de la partie'));
   f.innerHTML = ''; f.append(in_); f.scrollTop = 0;
+  const echec = msg => { in_.innerHTML = ''; in_.append(h('div', { class: 'vide-liste' }, msg), h('button', { class: 'plus', onclick: fermer }, 'Fermer')); };
   let pgn;
-  try { pgn = await rpc('echecs_partie', { p_code: S.code, p_url: g.u }); } catch (e) { in_.innerHTML = ''; in_.append(h('div', { class: 'vide-liste' }, 'Cette partie n’a pas pu être chargée. Vérifie ta connexion.'), h('button', { class: 'plus', onclick: fermer }, 'Fermer')); return; }
-  const ch = new Chess();
-  try { ch.loadPgn(pgn); } catch { in_.innerHTML = ''; in_.append(h('div', { class: 'vide-liste' }, 'Les coups de cette partie sont illisibles.'), h('button', { class: 'plus', onclick: fermer }, 'Fermer')); return; }
-  const coups = ch.history({ verbose: true });
-  const rej = new Chess(); const pos = [rej.board()];
-  for (const c of coups) { rej.move(c.san); pos.push(rej.board()); }
-  let i = coups.length, bas = g.co === 'blancs' ? 'w' : 'b', lecture = null;
+  try { pgn = await rpc('echecs_partie', { p_code: S.code, p_url: g.u }); } catch { return echec('Cette partie n’a pas pu être chargée. Vérifie ta connexion.'); }
+  let donnees;
+  try { donnees = positionsDe(pgn); } catch { return echec('Les coups de cette partie sont illisibles.'); }
+  const { coups, pos } = donnees;
+  const moi = g.co === 'blancs' ? 'w' : 'b';
+  const pliesBoards = pos.map(p => new Chess(p.fen).board());
+  let i = coups.length, bas = moi, lecture = null, fleches = false;
+  let ana = null; // { plies, calc }
+  let etat = 'inconnu'; // inconnu | aucune | calcul | prete
+  let annuleManuel = false, wake = null;
+
   const plateau = h('div', { class: 'plateau', role: 'img', 'aria-label': 'Échiquier' });
+  const svgFl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svgFl.setAttribute('viewBox', '0 0 8 8'); svgFl.setAttribute('class', 'fleches');
+  const enveloppe = h('div', { class: 'plateau-env' }, plateau, svgFl);
   const liste = h('div', { class: 'coups' });
-  const btn = (nom, svg, fn, cls = '') => h('button', { 'aria-label': nom, class: cls, onclick: fn, html: svg });
+  const panneau = h('div', { class: 'analyse' });
+  const infoPly = h('div', { class: 'info-ply' });
   const ic = d => `<svg viewBox="0 0 24 24">${d}</svg>`;
+  const btn = (nom, svg, fn, cls = '') => h('button', { 'aria-label': nom, title: nom, class: cls, onclick: fn, html: svg });
+  const bTour = btn('Retourner l’échiquier', ic('<path d="M7 4v14m0 0l-3-3m3 3l3-3M17 20V6m0 0l-3 3m3-3l3 3"/>'), () => { bas = bas === 'w' ? 'b' : 'w'; dessiner(); });
   const bDebut = btn('Début', ic('<path d="M6 5v14M18 6l-8 6 8 6z"/>'), () => aller_(0));
   const bPrec = btn('Coup précédent', ic('<path d="M15 6l-6 6 6 6"/>'), () => aller_(i - 1));
   const bLire = btn('Lecture', ic('<path d="M8 5l11 7-11 7z"/>'), () => bascule(), 'lecture');
   const bSuiv = btn('Coup suivant', ic('<path d="M9 6l6 6-6 6"/>'), () => aller_(i + 1));
   const bFin = btn('Fin', ic('<path d="M18 5v14M6 6l8 6-8 6z"/>'), () => aller_(coups.length));
-  const bTour = btn('Retourner l’échiquier', ic('<path d="M7 4v14m0 0l-3-3m3 3l3-3M17 20V6m0 0l-3 3m3-3l3 3"/>'), () => { bas = bas === 'w' ? 'b' : 'w'; dessiner(); });
+  const bFl = btn('Montrer le meilleur coup', ic('<path d="M5 19L19 5M19 5h-9M19 5v9"/>'), () => { fleches = !fleches; dessiner(); }, 'fl');
   function bascule() {
     if (lecture) { clearInterval(lecture); lecture = null; bLire.innerHTML = ic('<path d="M8 5l11 7-11 7z"/>'); return; }
     if (i >= coups.length) i = 0;
@@ -419,8 +521,22 @@ async function ouvrirPartie(g) {
     lecture = setInterval(() => { if (i >= coups.length) { bascule(); return; } aller_(i + 1); }, 900);
   }
   function aller_(n) { i = Math.max(0, Math.min(coups.length, n)); dessiner(); }
+
+  const centre = nom => { // coordonnées d'une case (a1..h8) dans l'orientation courante
+    const c = 'abcdefgh'.indexOf(nom[0]), r = 8 - +nom[1];
+    return [(bas === 'w' ? c : 7 - c) + 0.5, (bas === 'w' ? r : 7 - r) + 0.5];
+  };
+  function fleche(uci, couleur) {
+    const [x1, y1] = centre(uci.slice(0, 2)), [x2, y2] = centre(uci.slice(2, 4));
+    const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    const t = 0.34, bx = x2 - ux * t * 1.1, by = y2 - uy * t * 1.1;
+    const px = -uy * t * 0.62, py = ux * t * 0.62;
+    return `<line x1="${x1}" y1="${y1}" x2="${bx}" y2="${by}" stroke="${couleur}" stroke-width=".16" stroke-linecap="round" opacity=".92"/>` +
+      `<polygon points="${x2 - ux * 0.04},${y2 - uy * 0.04} ${bx + px},${by + py} ${bx - px},${by - py}" fill="${couleur}" opacity=".92"/>`;
+  }
+
   function dessiner() {
-    plateau.innerHTML = ''; const B = pos[i]; const dern = i > 0 ? coups[i - 1] : null;
+    plateau.innerHTML = ''; const B = pliesBoards[i]; const dern = i > 0 ? coups[i - 1] : null;
     const rangs = bas === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
     const cols = bas === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
     rangs.forEach((r, ri) => cols.forEach((c, ci) => {
@@ -431,18 +547,151 @@ async function ouvrirPartie(g) {
       if (ri === 7) cas.append(h('span', { class: 'co f' }, 'abcdefgh'[c]));
       plateau.append(cas);
     }));
+    // flèches : meilleur coup (bleu) et coup réellement joué si c'était une faute (rose)
+    let fl = '';
+    if (fleches && ana && i < coups.length && ana.plies[i].b) {
+      const meil = ana.plies[i].b; const joue = uciDe(coups[i]); const cc = ana.calc.coups[i];
+      if (cc && cc.cls && joue !== meil) fl += fleche(joue, '#E58EC0');
+      fl += fleche(meil, '#3F78E0');
+    }
+    svgFl.innerHTML = fl;
+    bFl.disabled = !ana; bFl.classList.toggle('actif', fleches && !!ana);
     bDebut.disabled = bPrec.disabled = i === 0; bSuiv.disabled = bFin.disabled = i === coups.length;
     $$('button', liste).forEach(b => b.removeAttribute('aria-current'));
     const cur = i ? $(`button[data-i="${i}"]`, liste) : null;
-    if (cur) { cur.setAttribute('aria-current', 'true'); cur.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+    if (cur) {
+      cur.setAttribute('aria-current', 'true');
+      const lr = liste.getBoundingClientRect(), br = cur.getBoundingClientRect();
+      if (br.top < lr.top) liste.scrollTop -= lr.top - br.top; else if (br.bottom > lr.bottom) liste.scrollTop += br.bottom - lr.bottom;
+    }
+    majJoueurs(); majInfo(); majCurseur();
   }
-  let tour = null;
-  coups.forEach((c, k) => {
-    const b = h('button', { 'data-i': k + 1, onclick: () => aller_(k + 1) }, c.san);
-    if (c.color === 'w') { tour = h('span', { class: 'tour' }, h('span', { class: 'num' }, (k / 2 + 1) + '.'), b); liste.append(tour); }
-    else if (tour && k > 0) { tour.append(b); tour = null; }
-    else liste.append(h('span', { class: 'tour' }, h('span', { class: 'num' }, '…'), b));
-  });
+  const moiEl = h('div', {}, h('b', {}, PSEUDO), ' ', h('span', {}, g.e ?? '')), luiEl = h('div', {}, h('b', {}, g.adv), ' ', h('span', {}, g.ea ?? ''));
+  const jHaut = h('div', { class: 'joueur' }), jBas = h('div', { class: 'joueur' });
+  function majJoueurs() { jHaut.innerHTML = jBas.innerHTML = ''; const moiBas = bas === moi; (moiBas ? jBas : jHaut).append(moiEl); (moiBas ? jHaut : jBas).append(luiEl); }
+
+  /* liste des coups, avec les fautes repérées */
+  function listeCoups() {
+    liste.innerHTML = ''; let tour = null;
+    coups.forEach((c, k) => {
+      const cc = ana ? ana.calc.coups[k] : null;
+      const cls = cc && cc.cls ? ' c-' + cc.cls : '';
+      const decisif = ana && ana.calc.pt && ana.calc.pt.i === k + 1 ? ' decisif-coup' : '';
+      const b = h('button', { 'data-i': k + 1, class: (cls + decisif).trim(), title: cc && cc.cls ? NOM_CLS[cc.cls] : null, onclick: () => aller_(k + 1) }, c.san + (cc && cc.cls ? SYMB[cc.cls] : ''));
+      if (c.color === 'w') { tour = h('span', { class: 'tour' }, h('span', { class: 'num' }, (k / 2 + 1) + '.'), b); liste.append(tour); }
+      else if (tour && k > 0) { tour.append(b); tour = null; }
+      else liste.append(h('span', { class: 'tour' }, h('span', { class: 'num' }, '…'), b));
+    });
+  }
+
+  /* ligne d'information sur la position affichée */
+  function majInfo() {
+    infoPly.innerHTML = '';
+    if (!ana) return;
+    const W = ana.calc.W[i]; const mien = moi === 'w' ? W : 100 - W; const e = ana.plies[i].e;
+    const eMoi = moi === 'w' ? e : -e;
+    infoPly.append(h('span', { class: 'chance' }, `Tes chances de gagner : ${Math.round(mien)} %`), h('span', { class: 'ev' }, Math.abs(eMoi) >= 9000 ? (eMoi > 0 ? `mat en ${10000 - eMoi}` : `mat adverse en ${10000 + eMoi}`) : `évaluation ${formatEval(eMoi)}`));
+    if (fleches && i < coups.length && ana.plies[i].b) infoPly.append(h('div', { class: 'legende-fl' }, h('span', { class: 'bleu' }, 'Meilleur coup'), ana.calc.coups[i] && ana.calc.coups[i].cls && uciDe(coups[i]) !== ana.plies[i].b ? h('span', { class: 'rose' }, 'Coup joué') : null));
+    if (i > 0) {
+      const cc = ana.calc.coups[i - 1];
+      if (cc && cc.cls) {
+        const meil = ana.plies[i - 1].b;
+        infoPly.append(h('div', { class: 'faute c-' + cc.cls }, `${(cc.mover === moi ? 'Ton coup' : 'Coup de l’adversaire')} ${coups[i - 1].san} : ${NOM_CLS[cc.cls]}.` + (meil ? ` Meilleur coup : ${sanDe(pos[i - 1].fen, meil)}.` : '')));
+      }
+    }
+  }
+
+  /* courbe d'évaluation */
+  let courbeEl = null, curseurEl = null;
+  function majCurseur() {
+    if (!courbeEl || !curseurEl) return;
+    const n = coups.length; const W = courbeEl.clientWidth || 340;
+    const x = n ? (i / n) * W : 0; curseurEl.setAttribute('x1', x); curseurEl.setAttribute('x2', x);
+  }
+  function dessinerCourbe(host) {
+    const n = coups.length, W = host.clientWidth || 340, H = 118, mid = H / 2;
+    const mien = p => (moi === 'w' ? p : 100 - p);
+    const X = k => (k / n) * W, Y = k => H - (mien(ana.calc.W[k]) / 100) * H;
+    let d = ''; for (let k = 0; k <= n; k++) d += (k ? 'L' : 'M') + X(k).toFixed(1) + ',' + Y(k).toFixed(1);
+    const zone = `M0,${mid}` + d.replace(/^M/, 'L') + `L${W},${mid}Z`;
+    const pt = ana.calc.pt;
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+      <defs><clipPath id="hau"><rect x="0" y="0" width="${W}" height="${mid}"/></clipPath><clipPath id="bas"><rect x="0" y="${mid}" width="${W}" height="${mid}"/></clipPath></defs>
+      <path d="${zone}" fill="#5B8DEF" fill-opacity=".30" clip-path="url(#hau)"/>
+      <path d="${zone}" fill="#E58EC0" fill-opacity=".38" clip-path="url(#bas)"/>
+      <line x1="0" x2="${W}" y1="${mid}" y2="${mid}" stroke="#B3B8D2" stroke-dasharray="3 4"/>
+      <path d="${d}" fill="none" stroke="#6A58C8" stroke-width="2" stroke-linejoin="round"/>
+      ${pt ? `<circle cx="${X(pt.i).toFixed(1)}" cy="${Y(pt.i).toFixed(1)}" r="6.5" fill="#fff" stroke="#6A58C8" stroke-width="2.5"/>` : ''}
+      <line class="cur" x1="0" x2="0" y1="0" y2="${H}" stroke="#1D2140" stroke-width="1.5"/>
+      <text x="6" y="12" font-size="11" fill="#646A8F">Tu es mieux</text><text x="6" y="${H - 5}" font-size="11" fill="#646A8F">L’adversaire est mieux</text></svg>`;
+    courbeEl = host; curseurEl = $('.cur', host); majCurseur();
+    const aller2 = ev => { const r = host.getBoundingClientRect(); aller_(Math.round(((ev.clientX - r.left) / r.width) * n)); };
+    host.onpointerdown = ev => { host.setPointerCapture(ev.pointerId); aller2(ev); };
+    host.onpointermove = ev => { if (ev.buttons) aller2(ev); };
+  }
+
+  /* panneau d'analyse */
+  function texteDecisif() {
+    const pt = ana.calc.pt;
+    if (!pt) return { titre: 'Pas de tournant net', corps: 'La partie est restée serrée du début à la fin : aucun coup n’a fait basculer l’évaluation de façon marquée.' };
+    const c = coups[pt.i - 1]; const num = Math.ceil(pt.i / 2) + (pt.i % 2 ? '.' : '…');
+    const meil = ana.plies[pt.i - 1].b; const sm = meil ? sanDe(pos[pt.i - 1].fen, meil) : null;
+    const av = Math.round(pt.avant), ap = Math.round(pt.apres);
+    const mine = pt.mover === moi;
+    let corps;
+    if (pt.delta < 0 && mine) corps = `Au coup ${num} ${c.san}, tes chances de gagner passent de ${av} % à ${ap} %.` + (sm && sm !== c.san ? ` Le meilleur coup était ${sm}.` : '');
+    else if (pt.delta < 0) corps = `Au coup ${num} ${c.san}, l’adversaire reprend la main : tes chances passent de ${av} % à ${ap} %.`;
+    else if (mine) corps = `Ton coup ${num} ${c.san} renverse la partie : tes chances passent de ${av} % à ${ap} %.`;
+    else corps = `Au coup ${num} ${c.san}, l’adversaire lâche prise : tes chances passent de ${av} % à ${ap} %.` + (sm && sm !== c.san ? ` Il fallait jouer ${sm}.` : '');
+    const titre = g.issue === 'p' ? (mine && pt.delta < 0 ? 'Là où tu as laissé filer la partie' : 'Là où la partie t’a échappé') : g.issue === 'g' ? 'Là où la partie a basculé en ta faveur' : 'Le tournant de la partie';
+    return { titre, corps };
+  }
+  function ligneStats(nom, acc, cn) {
+    return h('div', { class: 'st' }, h('div', { class: 'st-nom' }, nom), h('div', { class: 'st-pr' }, acc == null ? '—' : Math.round(acc) + ' %'),
+      h('div', { class: 'st-n' }, pl(cn.g, 'gaffe') + ', ' + pl(cn.e, 'erreur') + ', ' + pl(cn.i, 'imprécision')));
+  }
+  function rendrePanneau() {
+    panneau.innerHTML = '';
+    if (etat === 'inconnu') { panneau.append(h('div', { class: 'ana-msg' }, 'Recherche d’une analyse existante…')); return; }
+    if (etat === 'aucune') {
+      const nv = NIVEAUX[S.prof];
+      panneau.append(h('h3', {}, 'Analyse de la partie'), h('p', { class: 'ana-msg' }, `Stockfish passe chaque position en revue pour repérer les gaffes et le moment où la partie bascule. Niveau ${nv.nom.toLowerCase()} (${nv.det}). Garde l’appli ouverte pendant l’analyse.`),
+        h('button', { class: 'btn', onclick: lancer }, 'Analyser cette partie'));
+      return;
+    }
+    if (etat === 'calcul') { panneau.append(h('h3', {}, 'Analyse en cours'), h('div', { class: 'prog' }, h('i', { id: 'prog-i' })), h('p', { class: 'ana-msg', id: 'prog-t' }, 'Démarrage du moteur…'), h('button', { class: 'btn discret', onclick: () => { annuleManuel = true; moteur && moteur.stop(); } }, 'Annuler')); return; }
+    const r = ana.calc.resume; const t = texteDecisif();
+    const cm = moi === 'w' ? r.cw : r.cb, ca = moi === 'w' ? r.cb : r.cw, am = moi === 'w' ? r.aw : r.ab, aa = moi === 'w' ? r.ab : r.aw;
+    const cv = h('div', { class: 'courbe-ana', 'aria-label': 'Courbe d’évaluation de la partie' });
+    const dec = h('div', { class: 'decisif' }, h('h3', {}, t.titre), h('p', {}, t.corps),
+      ana.calc.pt && h('button', { class: 'btn', onclick: () => { fleches = true; aller_(ana.calc.pt.i - 1); f.scrollTo({ top: 0, behavior: 'smooth' }); } }, 'Voir ce moment'));
+    panneau.append(dec, h('h3', { style: 'margin-top:22px' }, 'Évolution de la partie'), cv, ligneStats('Toi', am, cm), ligneStats(g.adv, aa, ca),
+      h('button', { class: 'btn discret', style: 'margin-top:14px', onclick: () => { etat = 'aucune'; rendrePanneau(); } }, 'Refaire l’analyse'));
+    requestAnimationFrame(() => dessinerCourbe(cv));
+  }
+
+  async function lancer() {
+    etat = 'calcul'; annuleManuel = false; S.manuel++; moteur && moteur.stop(); rendrePanneau();
+    try { wake = await navigator.wakeLock?.request('screen'); } catch {}
+    const t0 = Date.now();
+    try {
+      const r = await analyserPartie(g, pgn, (k, n) => {
+        const bar = $('#prog-i'), tx = $('#prog-t'); if (!bar) return;
+        bar.style.width = (100 * k) / n + '%';
+        const reste = Math.max(0, Math.round(((Date.now() - t0) / k) * (n - k) / 1000));
+        tx.textContent = `Position ${k} sur ${n}` + (k > 3 ? `, il reste environ ${reste >= 60 ? Math.round(reste / 60) + ' min' : reste + ' s'}` : '');
+      }, () => annuleManuel);
+      if (r) { ana = r; etat = 'prete'; listeCoups(); } else etat = 'aucune';
+    } catch (e) {
+      etat = 'aucune'; rendrePanneau();
+      panneau.append(h('p', { class: 'ana-msg err' }, /démarrer/.test(e.message) ? 'Le moteur n’a pas pu démarrer sur cet appareil.' : 'L’analyse a échoué. Réessaie.'));
+      S.manuel--; try { wake && wake.release(); } catch {}
+      return;
+    }
+    S.manuel--; try { wake && wake.release(); } catch {}
+    rendrePanneau(); dessiner(); autoAnalyse();
+  }
+
   const titre = g.issue === 'g' ? `Victoire par ${FIN_GAGNE[g.ra] || '—'}` : g.issue === 'p' ? `Défaite par ${FIN_PERDU[g.res] || g.res}` : 'Partie nulle';
   const o = famille(g.o);
   in_.innerHTML = '';
@@ -450,19 +699,25 @@ async function ouvrirPartie(g) {
     h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: fermer }, 'Fermer'), h('a', { class: 'lien', href: g.u, target: '_blank', rel: 'noopener' }, 'Ouvrir sur chess.com')),
     h('div', { class: 'issue ' + g.issue }, titre),
     h('div', { class: 'meta' }, [fCourt.format(g.date), cadence(g.tc), o.fam !== 'Ouverture inconnue' ? o.fam + (o.var ? ' / ' + o.var : '') : ''].filter(Boolean).join(' / ')),
-    h('div', { class: 'joueur', id: 'j-haut' }), plateau, h('div', { class: 'joueur', id: 'j-bas' }),
-    h('div', { class: 'cmd' }, bTour, bDebut, bPrec, bLire, bSuiv, bFin), liste);
-  const moi = h('div', {}, h('b', {}, PSEUDO), ' ', h('span', {}, g.e ?? '')), lui = h('div', {}, h('b', {}, g.adv), ' ', h('span', {}, g.ea ?? ''));
-  const maj = () => { const haut = $('#j-haut'), bs = $('#j-bas'); haut.innerHTML = bs.innerHTML = ''; const moiBas = bas === (g.co === 'blancs' ? 'w' : 'b'); (moiBas ? bs : haut).append(moi); (moiBas ? haut : bs).append(lui); };
-  const dess0 = dessiner; dessiner = function () { dess0(); maj(); };
-  dessiner();
+    jHaut, enveloppe, jBas,
+    h('div', { class: 'cmd' }, bTour, bDebut, bPrec, bLire, bSuiv, bFin, bFl), infoPly, panneau, liste);
+  listeCoups(); dessiner(); rendrePanneau();
   f._clavier = ev => { if (ev.key === 'ArrowLeft') aller_(i - 1); else if (ev.key === 'ArrowRight') aller_(i + 1); else if (ev.key === 'Escape') fermer(); };
   document.addEventListener('keydown', f._clavier);
-  f._stop = () => { if (lecture) clearInterval(lecture); };
+  f._stop = () => { if (lecture) clearInterval(lecture); if (etat === 'calcul') { annuleManuel = true; moteur && moteur.stop(); } try { wake && wake.release(); } catch {} };
+
+  // analyse déjà enregistrée ?
+  try {
+    const r = await rpc('echecs_analyse_lire', { p_code: S.code, p_url: g.u });
+    if (r && r.plies && r.plies.length === pos.length) { ana = { plies: r.plies, calc: calculer(r.plies, moi, g.issue) }; etat = 'prete'; S.ana[g.u] = ana.calc.resume; store.set('ec_ana', S.ana); majBadge(g.u); listeCoups(); }
+    else etat = 'aucune';
+  } catch { etat = 'aucune'; }
+  if (etat !== 'calcul') { rendrePanneau(); dessiner(); }
 }
 function fermer() {
   const f = $('#feuille'); f._stop?.(); if (f._clavier) document.removeEventListener('keydown', f._clavier);
   f.classList.remove('on'); f.innerHTML = ''; document.body.style.overflow = '';
+  if (S.tab === 'parties' || S.tab === 'accueil') rendre();
 }
 
 /* ---------- navigation ---------- */
@@ -498,6 +753,6 @@ async function init() {
   addEventListener('resize', () => { if (S.tab === 'accueil') { clearTimeout(init.rt); init.rt = setTimeout(() => { const c = $('.courbe'); if (c) { c.dataset.anime = '1'; rendre(); } }, 150); } });
   if (!S.code) { afficherAcces(); return; }
   demarrer();
-  if (await charger(true)) rendre();
+  if (await charger(true)) { rendre(); autoAnalyse(); }
 }
 init();
