@@ -54,8 +54,8 @@ export class Moteur {
         if (l.startsWith('info') && l.includes(' score ') && !/ (lowerbound|upperbound)/.test(l)) {
           const m = l.match(/ depth (\d+).* score (cp|mate) (-?\d+)/);
           if (m) {
-            const pv = l.match(/ pv (\S+)/);
-            dernier = { d: +m[1], type: m[2], v: +m[3], pv: pv ? pv[1] : null };
+            const pv = l.match(/ pv (.+)$/);
+            dernier = { d: +m[1], type: m[2], v: +m[3], pv: pv ? pv[1].trim().split(' ') : [] };
           }
         } else if (l.startsWith('bestmove')) {
           this.onligne = null;
@@ -66,7 +66,7 @@ export class Moteur {
             if (dernier.type === 'cp') e = sgn * Math.max(-3000, Math.min(3000, dernier.v));
             else e = sgn * (dernier.v > 0 ? 1 : -1) * (10000 - Math.min(99, Math.abs(dernier.v)));
           }
-          res({ e: Math.round(e), b: b && b !== '(none)' ? b : null, d: dernier ? dernier.d : 0 });
+          res({ e: Math.round(e), b: b && b !== '(none)' ? b : null, d: dernier ? dernier.d : 0, pv: dernier ? dernier.pv : [] });
         }
       };
       this.cmd('position fen ' + fen);

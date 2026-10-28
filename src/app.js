@@ -1,4 +1,6 @@
 import { Chess } from 'chess.js';
+import { SPRITE } from './pieces.js';
+import { expliquerCoup, sanDe as sanDeX } from './expliquer.js';
 import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval, winPct } from './analyse.js';
 
 const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
@@ -171,13 +173,13 @@ function dessinerCourbe(host, pts, onScrub) {
     if (mo !== dernier) { if (dernier !== -1 && i > marges * 0.5 && i < ech.length - 6) labels += `<text class="axe" x="${X(i)}" y="${H - 6}" text-anchor="middle">${fMois.format(new Date(p.t * 1000))}</text>`; dernier = mo; }
   });
   svg.innerHTML = `<defs>
-    <linearGradient id="${idg}a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6A58C8" stop-opacity=".16"/><stop offset="1" stop-color="#6A58C8" stop-opacity="0"/></linearGradient>
-    <linearGradient id="${idg}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5B8DEF"/><stop offset="1" stop-color="#6A58C8"/></linearGradient>
+    <linearGradient id="${idg}a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2F66D0" stop-opacity=".16"/><stop offset="1" stop-color="#2F66D0" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${idg}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4F8CF0"/><stop offset="1" stop-color="#2F66D0"/></linearGradient>
   </defs>${grille}${labels}
   <path d="${area}" fill="url(#${idg}a)"/>
   <path class="ligne" d="${d}" fill="none" stroke="url(#${idg}l)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
-  <g class="cur" style="display:none"><line y1="${m.t - 6}" y2="${H - m.b}" stroke="#6A58C8" stroke-opacity=".45" stroke-dasharray="3 4"/><circle r="6" fill="#FFFFFF" stroke="#6A58C8" stroke-width="2.5"/></g>
-  <circle class="fin" cx="${P.at(-1)[0]}" cy="${P.at(-1)[1]}" r="5" fill="#6A58C8"/>`;
+  <g class="cur" style="display:none"><line y1="${m.t - 6}" y2="${H - m.b}" stroke="#2F66D0" stroke-opacity=".45" stroke-dasharray="3 4"/><circle r="6" fill="#FFFFFF" stroke="#2F66D0" stroke-width="2.5"/></g>
+  <circle class="fin" cx="${P.at(-1)[0]}" cy="${P.at(-1)[1]}" r="5" fill="#2F66D0"/>`;
   host.append(svg);
   const ligne = $('.ligne', svg);
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches && !host.dataset.anime) {
@@ -359,9 +361,9 @@ function blocProgression(per) {
   const barres = semaines.map((w, i) => {
     const hh = (taux_(w) / maxi) * (H - bas - haut), x = X(i) - bw / 2, y = H - bas - hh;
     const lab = new Date(w.k).toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw}" height="${hh.toFixed(1)}" rx="5" fill="${i === semaines.length - 1 ? '#6A58C8' : '#B9A6F8'}"/>` +
-      `<text x="${X(i).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="#1D2140">${taux_(w).toFixed(1).replace('.', ',')}</text>` +
-      `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#646A8F">${lab}</text>`;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw}" height="${hh.toFixed(1)}" rx="5" fill="${i === semaines.length - 1 ? '#2F66D0' : '#9DB8EE'}"/>` +
+      `<text x="${X(i).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="#1B2433">${taux_(w).toFixed(1).replace('.', ',')}</text>` +
+      `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#5F6B80">${lab}</text>`;
   }).join('');
   sec.append(h('div', { class: 'prog-graph', html: `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Gaffes et erreurs pour 100 coups, par semaine">${barres}</svg>` }));
   sec.append(h('p', { class: 'ana-msg', style: 'margin-top:6px' }, 'Gaffes et erreurs pour 100 coups, par semaine (lundi de la semaine en bas). Plus c’est bas, mieux c’est.'));
@@ -539,7 +541,7 @@ function vueReglages() {
       catch (e) { msg.textContent = e.message; }
     } }, 'Changer le code'), h('div', { style: 'height:10px' }), msg));
   v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Cet appareil'),
-    h('p', {}, 'Les données sont gardées en mémoire pour que l’appli s’ouvre même sans réseau.'),
+    h('p', {}, 'Les données sont gardées en mémoire pour que l’appli s’ouvre même sans réseau. Pièces d’échecs : Colin M.L. Burnett (Wikimedia Commons), licence CC BY-SA 3.0.'),
     h('button', { class: 'btn discret', onclick: () => { ['ec_code', 'ec_data'].forEach(store.del); location.reload(); } }, 'Verrouiller et effacer les données locales')));
 }
 
@@ -779,6 +781,77 @@ const SYMB = { i: '?!', e: '?', g: '??' };
 const NOM_CLS = { i: 'imprécision', e: 'erreur', g: 'gaffe' };
 const pl = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
 
+/* ---------- plateau : pièces SVG, surbrillances, animation ---------- */
+const pieceSvg = (type, color) => `<svg viewBox="0 0 40 40" aria-hidden="true"><use href="#${color}${type}"/></svg>`;
+function roiEnEchec(fen) {
+  try {
+    const c = new Chess(fen); if (!c.inCheck()) return null;
+    const t = c.turn(), B = c.board();
+    for (let r = 0; r < 8; r++) for (let k = 0; k < 8; k++) { const p = B[r][k]; if (p && p.type === 'k' && p.color === t) return 'abcdefgh'[k] + (8 - r); }
+  } catch {}
+  return null;
+}
+function construirePlateau(plateau, fen, bas, o = {}) {
+  plateau.innerHTML = '';
+  const B = new Chess(fen).board(), ech = roiEnEchec(fen);
+  const rangs = bas === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0], cols = rangs.slice();
+  rangs.forEach((r, ri) => cols.forEach((c, ci) => {
+    const nom = 'abcdefgh'[c] + (8 - r), p = B[r][c];
+    const attrs = { class: 'case ' + ((r + c) % 2 ? 'fo' : 'cl') + (o.dernier && (o.dernier.from === nom || o.dernier.to === nom) ? ' der' : '') + (o.sel === nom ? ' sel' : '') + (ech === nom ? ' echec' : '') };
+    if (o.onclick) attrs.onclick = () => o.onclick(nom);
+    const cas = h('div', attrs);
+    if (p) cas.append(h('span', { class: 'p', html: pieceSvg(p.type, p.color) }));
+    if (o.cibles && o.cibles.some(m => m.to === nom)) cas.append(h('span', { class: 'pt' + (p ? ' pr' : '') }));
+    if (ci === 0) cas.append(h('span', { class: 'co r' }, String(8 - r)));
+    if (ri === 7) cas.append(h('span', { class: 'co f' }, 'abcdefgh'[c]));
+    plateau.append(cas);
+  }));
+}
+function animerCoup(plateau, dernier, bas) {
+  if (!dernier || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const pos_ = nom => { const c = 'abcdefgh'.indexOf(nom[0]), r = 8 - +nom[1]; return { c: bas === 'w' ? c : 7 - c, r: bas === 'w' ? r : 7 - r }; };
+  const a = pos_(dernier.from), b = pos_(dernier.to);
+  const cell = plateau.children[b.r * 8 + b.c]; const el = cell && cell.querySelector('.p'); if (!el) return;
+  el.style.transform = `translate(${(a.c - b.c) * 100}%, ${(a.r - b.r) * 100}%)`; el.style.zIndex = 4;
+  el.getBoundingClientRect();
+  el.style.transition = 'transform .2s ease-out'; el.style.transform = 'none';
+}
+
+/* ---------- pourquoi : explications fondées sur le moteur ---------- */
+const cachePq = new Map();
+async function profond(fen, joue) {
+  const k = fen + '|' + joue; if (cachePq.has(k)) return cachePq.get(k);
+  S.manuel++; moteur && moteur.stop();
+  try {
+    const rb = await exclusif(() => getMoteur().evaluer(fen, { d: 12, cap: 1500 }));
+    let ra;
+    if (joue === rb.b) ra = rb;
+    else {
+      const r = essaiCoup(fen, joue);
+      if (r && r.c.isGameOver()) ra = { e: r.c.isCheckmate() ? (r.m.color === 'w' ? 10000 : -10000) : 0, pv: [], b: null };
+      else ra = await exclusif(() => getMoteur().evaluer(r.c.fen(), { d: 12, cap: 1500 }));
+    }
+    const res = { rb, ra }; cachePq.set(k, res); return res;
+  } finally { S.manuel = Math.max(0, S.manuel - 1); autoAnalyse(); }
+}
+const explicationDe = (R, fen, joue, voix) => expliquerCoup({ fen, joue, best: R.rb.b, pvApres: R.ra.pv || [], pvMeilleur: R.rb.pv || [], eAvant: R.rb.e, eApres: R.ra.e, voix });
+function noeudExplication(ex, o = {}) {
+  const n = h('div', { class: 'pourquoi' });
+  if (o.titre || ex.titre) n.append(h('h4', {}, o.titre || ex.titre));
+  ex.lignes.forEach(t => n.append(h('p', {}, t)));
+  if (!o.sansMeilleur && ex.meilleur.length) {
+    n.append(h('h4', {}, ex.lignes.length ? `Le meilleur coup était ${ex.san}` : 'Pourquoi'));
+    ex.meilleur.forEach(t => n.append(h('p', {}, '• ' + t)));
+  }
+  return n;
+}
+async function blocPourquoi(fen, joue, voix = 'tu', o = {}) {
+  try {
+    const R = await profond(fen, joue);
+    return noeudExplication(explicationDe(R, fen, joue, voix), o);
+  } catch { return h('p', { class: 'ana-msg err' }, 'Le moteur n’a pas pu produire d’explication. Réessaie.'); }
+}
+
 async function ouvrirPartie(g, opts = {}) {
   const f = $('#feuille'); f.classList.add('on'); document.body.style.overflow = 'hidden';
   const in_ = h('div', { class: 'in' }, h('div', { class: 'charge' }, 'Chargement de la partie'));
@@ -790,19 +863,21 @@ async function ouvrirPartie(g, opts = {}) {
   try { donnees = positionsDe(pgn); } catch { return echec('Les coups de cette partie sont illisibles.'); }
   const { coups, pos } = donnees;
   const moi = g.co === 'blancs' ? 'w' : 'b';
-  const pliesBoards = pos.map(p => new Chess(p.fen).board());
-  let i = coups.length, bas = moi, lecture = null, fleches = false;
+  let i = coups.length, iPrec = i, bas = moi, lecture = null, fleches = false;
   let ana = null; // { plies, calc }
   let etat = 'inconnu'; // inconnu | aucune | calcul | prete
   let annuleManuel = false, wake = null, nvSel = niveauDe(g);
+  const expCache = new Map();
 
   const plateau = h('div', { class: 'plateau', role: 'img', 'aria-label': 'Échiquier' });
   const svgFl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svgFl.setAttribute('viewBox', '0 0 8 8'); svgFl.setAttribute('class', 'fleches');
   const enveloppe = h('div', { class: 'plateau-env' }, plateau, svgFl);
+  const vhost = h('div', { class: 'var-host', style: 'display:none' });
   const liste = h('div', { class: 'coups' });
   const panneau = h('div', { class: 'analyse' });
   const infoPly = h('div', { class: 'info-ply' });
+  const vpanel = h('div', { class: 'analyse var-panel', style: 'display:none' });
   const ic = d => `<svg viewBox="0 0 24 24">${d}</svg>`;
   const btn = (nom, svg, fn, cls = '') => h('button', { 'aria-label': nom, title: nom, class: cls, onclick: fn, html: svg });
   const bTour = btn('Retourner l’échiquier', ic('<path d="M7 4v14m0 0l-3-3m3 3l3-3M17 20V6m0 0l-3 3m3-3l3 3"/>'), () => { bas = bas === 'w' ? 'b' : 'w'; dessiner(); });
@@ -812,6 +887,7 @@ async function ouvrirPartie(g, opts = {}) {
   const bSuiv = btn('Coup suivant', ic('<path d="M9 6l6 6-6 6"/>'), () => aller_(i + 1));
   const bFin = btn('Fin', ic('<path d="M18 5v14M6 6l8 6-8 6z"/>'), () => aller_(coups.length));
   const bFl = btn('Montrer le meilleur coup', ic('<path d="M5 19L19 5M19 5h-9M19 5v9"/>'), () => { fleches = !fleches; dessiner(); }, 'fl');
+  const cmd = h('div', { class: 'cmd' }, bTour, bDebut, bPrec, bLire, bSuiv, bFin, bFl);
   function bascule() {
     if (lecture) { clearInterval(lecture); lecture = null; bLire.innerHTML = ic('<path d="M8 5l11 7-11 7z"/>'); return; }
     if (i >= coups.length) i = 0;
@@ -820,37 +896,19 @@ async function ouvrirPartie(g, opts = {}) {
   }
   function aller_(n) { i = Math.max(0, Math.min(coups.length, n)); dessiner(); }
 
-  const centre = nom => { // coordonnées d'une case (a1..h8) dans l'orientation courante
-    const c = 'abcdefgh'.indexOf(nom[0]), r = 8 - +nom[1];
-    return [(bas === 'w' ? c : 7 - c) + 0.5, (bas === 'w' ? r : 7 - r) + 0.5];
-  };
-  function fleche(uci, couleur) {
-    const [x1, y1] = centre(uci.slice(0, 2)), [x2, y2] = centre(uci.slice(2, 4));
-    const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
-    const t = 0.34, bx = x2 - ux * t * 1.1, by = y2 - uy * t * 1.1;
-    const px = -uy * t * 0.62, py = ux * t * 0.62;
-    return `<line x1="${x1}" y1="${y1}" x2="${bx}" y2="${by}" stroke="${couleur}" stroke-width=".16" stroke-linecap="round" opacity=".92"/>` +
-      `<polygon points="${x2 - ux * 0.04},${y2 - uy * 0.04} ${bx + px},${by + py} ${bx - px},${by - py}" fill="${couleur}" opacity=".92"/>`;
-  }
+  const centre = nom => { const c = 'abcdefgh'.indexOf(nom[0]), r = 8 - +nom[1]; return [(bas === 'w' ? c : 7 - c) + 0.5, (bas === 'w' ? r : 7 - r) + 0.5]; };
+  const fleche = (u, couleur) => flecheSvg(u, couleur, bas);
 
   function dessiner() {
-    plateau.innerHTML = ''; const B = pliesBoards[i]; const dern = i > 0 ? coups[i - 1] : null;
-    const rangs = bas === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
-    const cols = bas === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
-    rangs.forEach((r, ri) => cols.forEach((c, ci) => {
-      const nom = 'abcdefgh'[c] + (8 - r); const p = B[r][c];
-      const cas = h('div', { class: 'case ' + ((r + c) % 2 ? 'fo' : 'cl') + (dern && (dern.from === nom || dern.to === nom) ? ' der' : '') });
-      if (p) cas.append(h('span', { class: 'p ' + (p.color === 'w' ? 'b' : 'n') }, GLYPHE[p.type] + '︎'));
-      if (ci === 0) cas.append(h('span', { class: 'co r' }, String(8 - r)));
-      if (ri === 7) cas.append(h('span', { class: 'co f' }, 'abcdefgh'[c]));
-      plateau.append(cas);
-    }));
-    // flèches : meilleur coup (bleu) et coup réellement joué si c'était une faute (rose)
+    const dern = i > 0 ? coups[i - 1] : null;
+    construirePlateau(plateau, pos[i].fen, bas, { dernier: dern });
+    if (dern && i === iPrec + 1) animerCoup(plateau, dern, bas);
+    iPrec = i;
     let fl = '';
     if (fleches && ana && i < coups.length && ana.plies[i].b) {
-      const meil = ana.plies[i].b; const joue = uciDe(coups[i]); const cc = ana.calc.coups[i];
-      if (cc && cc.cls && joue !== meil) fl += fleche(joue, '#E58EC0');
-      fl += fleche(meil, '#3F78E0');
+      const meil = ana.plies[i].b, joue = uciDe(coups[i]), cc = ana.calc.coups[i];
+      if (cc && cc.cls && joue !== meil) fl += fleche(joue, '#55627C');
+      fl += fleche(meil, '#2F7BF6');
     }
     svgFl.innerHTML = fl;
     bFl.disabled = !ana; bFl.classList.toggle('actif', fleches && !!ana);
@@ -882,21 +940,132 @@ async function ouvrirPartie(g, opts = {}) {
     });
   }
 
+  /* explication d'un coup de la partie (ply = numéro du coup, à partir de 1) */
+  async function expliquerPly(ply, conteneur, bouton) {
+    const cle = String(ply);
+    if (bouton) { bouton.disabled = true; bouton.textContent = 'Le moteur cherche pourquoi…'; }
+    let noeud = expCache.get(cle);
+    if (!noeud) {
+      const fen = pos[ply - 1].fen, joue = uciDe(coups[ply - 1]), voix = coups[ply - 1].color === moi ? 'tu' : 'neutre';
+      noeud = await blocPourquoi(fen, joue, voix);
+      expCache.set(cle, noeud);
+    }
+    conteneur.innerHTML = ''; conteneur.append(noeud.cloneNode(true));
+    if (bouton) bouton.remove();
+  }
+
   /* ligne d'information sur la position affichée */
   function majInfo() {
     infoPly.innerHTML = '';
-    if (!ana) return;
-    const W = ana.calc.W[i]; const mien = moi === 'w' ? W : 100 - W; const e = ana.plies[i].e;
-    const eMoi = moi === 'w' ? e : -e;
-    infoPly.append(h('span', { class: 'chance' }, `Tes chances de gagner : ${Math.round(mien)} %`), h('span', { class: 'ev' }, Math.abs(eMoi) >= 9000 ? (eMoi > 0 ? `mat en ${10000 - eMoi}` : `mat adverse en ${10000 + eMoi}`) : `évaluation ${formatEval(eMoi)}`));
-    if (fleches && i < coups.length && ana.plies[i].b) infoPly.append(h('div', { class: 'legende-fl' }, h('span', { class: 'bleu' }, 'Meilleur coup'), ana.calc.coups[i] && ana.calc.coups[i].cls && uciDe(coups[i]) !== ana.plies[i].b ? h('span', { class: 'rose' }, 'Coup joué') : null));
-    if (i > 0) {
-      const cc = ana.calc.coups[i - 1];
-      if (cc && cc.cls) {
-        const meil = ana.plies[i - 1].b;
-        infoPly.append(h('div', { class: 'faute c-' + cc.cls }, `${(cc.mover === moi ? 'Ton coup' : 'Coup de l’adversaire')} ${coups[i - 1].san} : ${NOM_CLS[cc.cls]}.` + (meil ? ` Meilleur coup : ${sanDe(pos[i - 1].fen, meil)}.` : '')));
-      }
+    if (ana) {
+      const W = ana.calc.W[i]; const mien = moi === 'w' ? W : 100 - W; const e = ana.plies[i].e;
+      const eMoi = moi === 'w' ? e : -e;
+      infoPly.append(h('span', { class: 'chance' }, `Tes chances de gagner : ${Math.round(mien)} %`), h('span', { class: 'ev' }, Math.abs(eMoi) >= 9000 ? (eMoi > 0 ? `mat en ${10000 - eMoi}` : `mat adverse en ${10000 + eMoi}`) : `évaluation ${formatEval(eMoi)}`));
+      if (fleches && i < coups.length && ana.plies[i].b) infoPly.append(h('div', { class: 'legende-fl' }, h('span', { class: 'bleu' }, 'Meilleur coup'), ana.calc.coups[i] && ana.calc.coups[i].cls && uciDe(coups[i]) !== ana.plies[i].b ? h('span', { class: 'rose' }, 'Coup joué') : null));
     }
+    // coup concerné : le prochain si les flèches sont affichées, sinon celui qui vient d'être joué
+    const ply = fleches && ana && i < coups.length ? i + 1 : i;
+    if (ply > 0) {
+      const cc = ana ? ana.calc.coups[ply - 1] : null, c = coups[ply - 1];
+      const mine = c.color === moi;
+      if (cc && cc.cls) {
+        const meil = ana.plies[ply - 1].b;
+        infoPly.append(h('div', { class: 'faute c-' + cc.cls }, `${mine ? 'Ton coup' : 'Coup de l’adversaire'} ${Math.ceil(ply / 2)}${ply % 2 ? '.' : '…'} ${c.san} : ${NOM_CLS[cc.cls]}.` + (meil ? ` Meilleur coup : ${sanDe(pos[ply - 1].fen, meil)}.` : '')));
+      }
+      const zone = h('div', { class: 'ex-zone' });
+      const b = h('button', { class: 'btn discret petit', onclick: () => expliquerPly(ply, zone, b) }, cc && cc.cls ? 'Pourquoi ?' : `Expliquer ${c.san}`);
+      infoPly.append(h('div', { class: 'ligne-btn' }, b));
+      infoPly.append(zone);
+      if (expCache.has(String(ply))) { zone.append(expCache.get(String(ply)).cloneNode(true)); b.remove(); }
+    }
+    infoPly.append(h('div', { class: 'ligne-btn' }, h('button', { class: 'btn discret petit', onclick: () => entrerVariante(i, false) }, 'Jouer à partir d’ici')));
+  }
+
+  /* ---------- variante : continuer la partie depuis une position ---------- */
+  let vmode = false, vch = null, vcoups = [], vauto = true, vInfo = null, vDerniere = null, vpl = null, vDepart = 0, vMsg = '';
+  const mienV = (e, col) => (col === 'w' ? e : -e);
+  const prmV = () => paramsElo(nvSel);
+  async function evalV() {
+    if (vch.isGameOver()) { vInfo = { e: vch.isCheckmate() ? (vch.turn() === 'w' ? -10000 : 10000) : 0, b: null, pv: [] }; return vInfo; }
+    vInfo = await exclusif(() => getMoteur().evaluer(vch.fen(), { d: Math.max(10, prmV().d), cap: 900 }));
+    return vInfo;
+  }
+  async function entrerVariante(ply, meilleurDabord) {
+    if (lecture) bascule();
+    vmode = true; vch = new Chess(pos[ply].fen); vcoups = []; vDepart = ply; vDerniere = null; vMsg = '';
+    S.manuel++; moteur && moteur.stop();
+    enveloppe.style.display = 'none'; vhost.style.display = ''; cmd.style.display = 'none'; infoPly.style.display = 'none'; panneau.style.display = 'none'; liste.style.display = 'none'; vpanel.style.display = '';
+    vpl = plateauJouable(vhost, { fen: vch.fen(), bas, couleur: () => (vauto ? moi : undefined), onMove: jouerV });
+    vpl.bloquer(true); rendreV('Le moteur regarde la position…');
+    await evalV();
+    if (meilleurDabord && vInfo.b && vch.turn() === moi) { await jouerV(movePourUci(vInfo.b), true); return; }
+    if (vauto && vch.turn() !== moi && !vch.isGameOver()) { await moteurJoue(); return; }
+    vpl.bloquer(vch.isGameOver()); rendreV();
+  }
+  const movePourUci = u => ({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
+  async function jouerV(m, auto = false) {
+    if (!vmode || vch.isGameOver()) return;
+    const avant = vInfo, fenAv = vch.fen();
+    let mv; try { mv = vch.move({ from: m.from, to: m.to, promotion: m.promotion }); } catch { return; }
+    vcoups.push(mv); vpl.set(vch.fen(), { dernier: mv, anime: true }); vpl.bloquer(true); rendreV('Le moteur évalue ton coup…');
+    const apres = await evalV();
+    const perte = winPct(mienV(avant.e, mv.color)) - winPct(mienV(apres.e, mv.color));
+    vDerniere = { san: mv.san, fenAv, uci: mv.from + mv.to + (mv.promotion || ''), perte, mine: mv.color === moi, meilleur: avant.b && avant.b === (mv.from + mv.to + (mv.promotion || '')) };
+    if (vch.isGameOver()) { vpl.bloquer(true); rendreV(); return; }
+    if (vauto && vch.turn() !== moi) await moteurJoue(); else { vpl.bloquer(false); rendreV(); }
+  }
+  async function moteurJoue() {
+    rendreV('L’adversaire réfléchit…'); vpl.bloquer(true);
+    const r = await exclusif(() => getMoteur().evaluer(vch.fen(), prmV()));
+    if (!vmode) return;
+    if (!r.b) { vpl.bloquer(false); rendreV(); return; }
+    const mv = vch.move(movePourUci(r.b)); vcoups.push(mv);
+    vpl.set(vch.fen(), { dernier: mv, anime: true });
+    await evalV();
+    vpl.bloquer(vch.isGameOver()); rendreV();
+  }
+  function annulerV() {
+    if (!vcoups.length) return;
+    const n = vauto && vcoups.length >= 2 && vcoups[vcoups.length - 1].color !== moi ? 2 : 1;
+    for (let k = 0; k < n && vcoups.length; k++) { vch.undo(); vcoups.pop(); }
+    vDerniere = null; vpl.set(vch.fen(), {}); vpl.bloquer(true); rendreV('Le moteur regarde la position…');
+    evalV().then(() => { vpl.bloquer(vch.isGameOver()); rendreV(); });
+  }
+  function sortirVariante() {
+    vmode = false; S.manuel = Math.max(0, S.manuel - 1); autoAnalyse();
+    vhost.style.display = 'none'; vhost.innerHTML = ''; enveloppe.style.display = ''; cmd.style.display = ''; infoPly.style.display = ''; panneau.style.display = ''; liste.style.display = ''; vpanel.style.display = 'none';
+    dessiner(); f.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function sanVariante() {
+    const L = []; let n = vDepart;
+    vcoups.forEach((m, k) => { const ply = vDepart + k + 1; L.push((m.color === 'w' ? `${Math.ceil(ply / 2)}. ` : (k === 0 ? `${Math.ceil(ply / 2)}… ` : '')) + m.san); });
+    return L.join(' ');
+  }
+  function rendreV(msg) {
+    vpanel.innerHTML = '';
+    vpanel.append(h('h3', {}, 'Tu continues la partie'),
+      h('p', { class: 'ana-msg' }, `À partir de la position après le coup ${vDepart}. ` + (vauto ? `L’adversaire répond avec un moteur de niveau ${nvSel} elo.` : 'Tu joues les deux camps.')));
+    if (vcoups.length) vpanel.append(h('p', { class: 'var-san' }, sanVariante()));
+    if (msg) { vpanel.append(h('p', { class: 'ana-msg' }, msg)); return; }
+    if (vInfo) {
+      const colTrait = vch.turn(), eMoi = moi === 'w' ? vInfo.e : -vInfo.e, mien = winPct(eMoi);
+      vpanel.append(h('div', { class: 'info-ply' }, h('span', { class: 'chance' }, `Tes chances de gagner : ${Math.round(mien)} %`), h('span', { class: 'ev' }, Math.abs(eMoi) >= 9000 ? (eMoi > 0 ? `mat en ${10000 - eMoi}` : `mat adverse en ${10000 + eMoi}`) : `évaluation ${formatEval(eMoi)}`)));
+      if (vch.isGameOver()) vpanel.append(h('div', { class: 'retour ' + (vch.isCheckmate() ? (colTrait === moi ? 'mauvais' : 'bon') : '') }, vch.isCheckmate() ? (colTrait === moi ? 'Échec et mat : tu as perdu cette variante.' : 'Échec et mat : tu as gagné cette variante.') : 'Partie nulle.'));
+    }
+    if (vDerniere && vDerniere.mine) {
+      const p = vDerniere.perte, mot = vDerniere.meilleur ? 'Meilleur coup du moteur' : p >= 15 ? 'Gaffe' : p >= 10 ? 'Erreur' : p >= 5 ? 'Imprécision' : 'Bon coup';
+      const zone = h('div', { class: 'ex-zone' });
+      const b = h('button', { class: 'btn discret petit', onclick: async () => { b.disabled = true; b.textContent = 'Le moteur cherche pourquoi…'; zone.append(await blocPourquoi(vDerniere.fenAv, vDerniere.uci, 'tu')); b.remove(); } }, 'Pourquoi ?');
+      vpanel.append(h('div', { class: 'faute ' + (p >= 15 ? 'c-g' : p >= 10 ? 'c-e' : p >= 5 ? 'c-i' : 'ok') }, `Ton coup ${vDerniere.san} : ${mot.toLowerCase()}` + (p >= 5 ? ` (${Math.round(p)} points de chances perdus).` : '.')), h('div', { class: 'ligne-btn' }, b), zone);
+    }
+    if (vInfo && vInfo.b && !vch.isGameOver() && (!vauto || vch.turn() === moi)) {
+      vpanel.append(h('p', { class: 'ana-msg', style: 'margin-top:12px' }, `Meilleur coup selon le moteur : ${sanDe(vch.fen(), vInfo.b)}`),
+        h('button', { class: 'btn', onclick: () => jouerV(movePourUci(vInfo.b)) }, 'Jouer ce coup'));
+    }
+    vpanel.append(h('div', { class: 'actions', style: 'margin-top:16px' },
+      h('button', { class: 'btn discret', disabled: !vcoups.length, onclick: annulerV }, 'Annuler le dernier coup'),
+      h('button', { class: 'btn discret', onclick: () => { vauto = !vauto; entrerVariante(vDepart, false); } }, vauto ? 'Jouer les deux camps' : 'Jouer contre le moteur'),
+      h('button', { class: 'btn', onclick: sortirVariante }, 'Retour à la partie')));
   }
 
   /* courbe d'évaluation */
@@ -915,13 +1084,13 @@ async function ouvrirPartie(g, opts = {}) {
     const pt = ana.calc.pt;
     host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
       <defs><clipPath id="hau"><rect x="0" y="0" width="${W}" height="${mid}"/></clipPath><clipPath id="bas"><rect x="0" y="${mid}" width="${W}" height="${mid}"/></clipPath></defs>
-      <path d="${zone}" fill="#5B8DEF" fill-opacity=".30" clip-path="url(#hau)"/>
-      <path d="${zone}" fill="#E58EC0" fill-opacity=".38" clip-path="url(#bas)"/>
-      <line x1="0" x2="${W}" y1="${mid}" y2="${mid}" stroke="#B3B8D2" stroke-dasharray="3 4"/>
-      <path d="${d}" fill="none" stroke="#6A58C8" stroke-width="2" stroke-linejoin="round"/>
-      ${pt ? `<circle cx="${X(pt.i).toFixed(1)}" cy="${Y(pt.i).toFixed(1)}" r="6.5" fill="#fff" stroke="#6A58C8" stroke-width="2.5"/>` : ''}
-      <line class="cur" x1="0" x2="0" y1="0" y2="${H}" stroke="#1D2140" stroke-width="1.5"/>
-      <text x="6" y="12" font-size="11" fill="#646A8F">Tu es mieux</text><text x="6" y="${H - 5}" font-size="11" fill="#646A8F">L’adversaire est mieux</text></svg>`;
+      <path d="${zone}" fill="#4F8CF0" fill-opacity=".30" clip-path="url(#hau)"/>
+      <path d="${zone}" fill="#6B7C99" fill-opacity=".32" clip-path="url(#bas)"/>
+      <line x1="0" x2="${W}" y1="${mid}" y2="${mid}" stroke="#B3BDCE" stroke-dasharray="3 4"/>
+      <path d="${d}" fill="none" stroke="#2F66D0" stroke-width="2" stroke-linejoin="round"/>
+      ${pt ? `<circle cx="${X(pt.i).toFixed(1)}" cy="${Y(pt.i).toFixed(1)}" r="6.5" fill="#fff" stroke="#2F66D0" stroke-width="2.5"/>` : ''}
+      <line class="cur" x1="0" x2="0" y1="0" y2="${H}" stroke="#1B2433" stroke-width="1.5"/>
+      <text x="6" y="12" font-size="11" fill="#5F6B80">Tu es mieux</text><text x="6" y="${H - 5}" font-size="11" fill="#5F6B80">L’adversaire est mieux</text></svg>`;
     courbeEl = host; curseurEl = $('.cur', host); majCurseur();
     const aller2 = ev => { const r = host.getBoundingClientRect(); aller_(Math.round(((ev.clientX - r.left) / r.width) * n)); };
     host.onpointerdown = ev => { host.setPointerCapture(ev.pointerId); aller2(ev); };
@@ -964,8 +1133,12 @@ async function ouvrirPartie(g, opts = {}) {
     const r = ana.calc.resume; const t = texteDecisif();
     const cm = moi === 'w' ? r.cw : r.cb, ca = moi === 'w' ? r.cb : r.cw, am = moi === 'w' ? r.aw : r.ab, aa = moi === 'w' ? r.ab : r.aw;
     const cv = h('div', { class: 'courbe-ana', 'aria-label': 'Courbe d’évaluation de la partie' });
+    const pt = ana.calc.pt, zoneDec = h('div', { class: 'ex-zone' });
+    const bPq = pt && h('button', { class: 'btn discret', onclick: async () => { bPq.disabled = true; bPq.textContent = 'Le moteur cherche pourquoi…'; zoneDec.append(await blocPourquoi(pos[pt.i - 1].fen, uciDe(coups[pt.i - 1]), coups[pt.i - 1].color === moi ? 'tu' : 'neutre')); bPq.remove(); } }, 'Pourquoi ?');
     const dec = h('div', { class: 'decisif' }, h('h3', {}, t.titre), h('p', {}, t.corps),
-      ana.calc.pt && h('button', { class: 'btn', onclick: () => { fleches = true; aller_(ana.calc.pt.i - 1); f.scrollTo({ top: 0, behavior: 'smooth' }); } }, 'Voir ce moment'));
+      pt && h('div', { class: 'actions' },
+        h('button', { class: 'btn', onclick: () => { fleches = true; aller_(pt.i - 1); f.scrollTo({ top: 0, behavior: 'smooth' }); } }, 'Voir ce moment'), bPq,
+        pt.mover === moi && pt.delta < 0 && h('button', { class: 'btn discret', onclick: () => { aller_(pt.i - 1); entrerVariante(pt.i - 1, true); f.scrollTo({ top: 0, behavior: 'smooth' }); } }, 'Jouer le meilleur coup et continuer')), zoneDec);
     panneau.append(dec, h('h3', { style: 'margin-top:22px' }, 'Évolution de la partie'), cv, h('p', { class: 'ana-msg', style: 'margin:10px 0 0' }, `Analyse au niveau ${ana.nv} elo.`), ligneStats('Toi', am, cm), ligneStats(g.adv, aa, ca),
       h('button', { class: 'btn discret', style: 'margin-top:14px', onclick: () => { etat = 'aucune'; rendrePanneau(); } }, 'Refaire l’analyse'));
     requestAnimationFrame(() => dessinerCourbe(cv));
@@ -1000,12 +1173,11 @@ async function ouvrirPartie(g, opts = {}) {
     h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: fermer }, 'Fermer'), h('a', { class: 'lien', href: g.u, target: '_blank', rel: 'noopener' }, 'Ouvrir sur chess.com')),
     h('div', { class: 'issue ' + g.issue }, titre),
     h('div', { class: 'meta' }, [fCourt.format(g.date), cadence(g.tc), o.fam !== 'Ouverture inconnue' ? o.fam + (o.var ? ' / ' + o.var : '') : ''].filter(Boolean).join(' / ')),
-    jHaut, enveloppe, jBas,
-    h('div', { class: 'cmd' }, bTour, bDebut, bPrec, bLire, bSuiv, bFin, bFl), infoPly, panneau, liste);
+    jHaut, enveloppe, vhost, jBas, cmd, infoPly, vpanel, panneau, liste);
   listeCoups(); dessiner(); rendrePanneau();
-  f._clavier = ev => { if (ev.key === 'ArrowLeft') aller_(i - 1); else if (ev.key === 'ArrowRight') aller_(i + 1); else if (ev.key === 'Escape') fermer(); };
+  f._clavier = ev => { if (vmode) return; if (ev.key === 'ArrowLeft') aller_(i - 1); else if (ev.key === 'ArrowRight') aller_(i + 1); else if (ev.key === 'Escape') fermer(); };
   document.addEventListener('keydown', f._clavier);
-  f._stop = () => { if (lecture) clearInterval(lecture); if (etat === 'calcul') { annuleManuel = true; moteur && moteur.stop(); } try { wake && wake.release(); } catch {} };
+  f._stop = () => { if (lecture) clearInterval(lecture); if (etat === 'calcul') { annuleManuel = true; moteur && moteur.stop(); } if (vmode) { vmode = false; S.manuel = Math.max(0, S.manuel - 1); } try { wake && wake.release(); } catch {} };
 
   // analyse déjà enregistrée ?
   try {
@@ -1027,7 +1199,6 @@ function fermer() {
 
 /* ---------- entraînement : échiquier jouable, exercices, finales, plan du jour ---------- */
 const dateLocale = () => new Date().toLocaleDateString('sv-SE'); // AAAA-MM-JJ
-const GL = GLYPHE;
 function flecheSvg(uci, couleur, bas) {
   const ctr = nom => { const c = 'abcdefgh'.indexOf(nom[0]), r = 8 - +nom[1]; return [(bas === 'w' ? c : 7 - c) + 0.5, (bas === 'w' ? r : 7 - r) + 0.5]; };
   const [x1, y1] = ctr(uci.slice(0, 2)), [x2, y2] = ctr(uci.slice(2, 4));
@@ -1042,21 +1213,11 @@ function plateauJouable(host, opts) {
   const plateau = h('div', { class: 'plateau', role: 'application', 'aria-label': 'Échiquier : touche une pièce puis sa case d’arrivée' });
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 8 8'); svg.setAttribute('class', 'fleches');
   host.innerHTML = ''; host.append(h('div', { class: 'plateau-env' }, plateau, svg));
-  function rendre() {
-    plateau.innerHTML = '';
-    const c = new Chess(E.fen), B = c.board();
-    const rangs = E.bas === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0], cols = rangs.slice();
-    rangs.forEach((r, ri) => cols.forEach((cc, ci) => {
-      const nom = 'abcdefgh'[cc] + (8 - r), p = B[r][cc];
-      const cible = E.cibles.find(m => m.to === nom);
-      const cas = h('div', { class: 'case ' + ((r + cc) % 2 ? 'fo' : 'cl') + (E.dernier && (E.dernier.from === nom || E.dernier.to === nom) ? ' der' : '') + (E.sel === nom ? ' sel' : ''), onclick: () => clic(nom) });
-      if (p) cas.append(h('span', { class: 'p ' + (p.color === 'w' ? 'b' : 'n') }, GL[p.type] + '︎'));
-      if (cible) cas.append(h('span', { class: 'pt' + (p ? ' pr' : '') }));
-      if (ci === 0) cas.append(h('span', { class: 'co r' }, String(8 - r)));
-      if (ri === 7) cas.append(h('span', { class: 'co f' }, 'abcdefgh'[cc]));
-      plateau.append(cas);
-    }));
-    svg.innerHTML = E.fleches.map(f => flecheSvg(f[0], f[1], E.bas)).join('');
+  const couleur = () => (typeof opts.couleur === 'function' ? opts.couleur() : opts.couleur);
+  function rendre(anime) {
+    construirePlateau(plateau, E.fen, E.bas, { dernier: E.dernier, sel: E.sel, cibles: E.cibles, onclick: clic });
+    svg.innerHTML = E.fleches.map(fl => flecheSvg(fl[0], fl[1], E.bas)).join('');
+    if (anime && E.dernier) animerCoup(plateau, E.dernier, E.bas);
   }
   function clic(nom) {
     if (E.bloque) return;
@@ -1065,11 +1226,12 @@ function plateauJouable(host, opts) {
       const mv = E.cibles.find(m => m.to === nom && (!m.promotion || m.promotion === 'q'));
       if (mv) { E.sel = null; E.cibles = []; rendre(); opts.onMove({ from: mv.from, to: mv.to, promotion: mv.promotion, san: mv.san, uci: mv.from + mv.to + (mv.promotion || '') }); return; }
     }
-    if (p && p.color === c.turn() && (!opts.couleur || p.color === opts.couleur)) { E.sel = nom; E.cibles = c.moves({ square: nom, verbose: true }); } else { E.sel = null; E.cibles = []; }
+    const coul = couleur();
+    if (p && p.color === c.turn() && (!coul || p.color === coul)) { E.sel = nom; E.cibles = c.moves({ square: nom, verbose: true }); } else { E.sel = null; E.cibles = []; }
     rendre();
   }
   rendre();
-  return { set(fen, o = {}) { E.fen = fen; E.dernier = o.dernier || null; E.fleches = o.fleches || []; E.sel = null; E.cibles = []; rendre(); }, bloquer(b) { E.bloque = b; } };
+  return { set(fen, o = {}) { E.fen = fen; E.dernier = o.dernier || null; E.fleches = o.fleches || []; E.sel = null; E.cibles = []; rendre(o.anime); }, bloquer(b) { E.bloque = b; } };
 }
 
 /* ----- données des exercices ----- */
@@ -1122,75 +1284,78 @@ function ouvrirEntrain() {
 /* ----- séance d'exercices tirés de tes gaffes ----- */
 async function seanceExos(liste, fini) {
   const ov = ouvrirEntrain();
-  const file = liste.slice(); const reprise = new Set();
-  const resultats = [];
+  const file = liste.slice(), resultats = [];
   let k = 0;
   const quitter = () => { ov.fermer(); fini && fini(resultats); };
   function bilan() {
-    const bons = resultats.filter(r => r.ok).length;
+    const bons = resultats.filter(r => r.ok).length, rates = resultats.filter(r => !r.ok).map(r => r.ex);
     ov.in_.innerHTML = '';
     ov.in_.append(h('div', { class: 'haut' }, h('span', {}), h('button', { class: 'fermer', onclick: quitter }, 'Terminer')),
       h('div', { class: 'issue n' }, `${bons} réussi${bons > 1 ? 's' : ''} sur ${resultats.length}`),
       h('p', { class: 'meta' }, bons === resultats.length ? 'Séance parfaite. Ces positions reviendront dans quelques jours pour vérifier que tu les retiens.' : 'Les positions ratées reviendront bientôt : refaire les mêmes erreurs corrigées, c’est comme ça qu’elles disparaissent.'),
       h('div', { class: 'lignes' }, resultats.map(r => h('div', { class: 'ligne-kv' }, h('div', { class: 'k' }, TYPES[r.ex.ty].nom, h('small', {}, `Contre ${r.ex.adv}`)), h('div', { class: 'v', style: 'color:' + (r.ok ? 'var(--bleu-t)' : 'var(--rose-t)') }, r.ok ? 'Réussi' : 'À revoir')))),
-      h('button', { class: 'btn', style: 'margin-top:20px', onclick: quitter }, 'Terminer'));
+      rates.length ? h('button', { class: 'btn', style: 'margin-top:20px;margin-right:10px', onclick: () => { ov.fermer(); fini && fini(resultats); seanceExos(rates); } }, `Refaire les ${rates.length} à revoir`) : null,
+      h('button', { class: rates.length ? 'btn discret' : 'btn', style: 'margin-top:20px', onclick: quitter }, 'Terminer'));
   }
   function montrer() {
     if (k >= file.length) return bilan();
-    const ex = file[k], c0 = new Chess(ex.fen), cote = ex.co;
+    const ex = file[k], cote = ex.co;
+    const mien = e => (cote === 'w' ? e : -e);
     let essais = 0, fini_ = false;
-    const consigne = h('p', { class: 'consigne' }, `Les ${cote === 'w' ? 'blancs' : 'noirs'} jouent. Trouve le meilleur coup.`);
-    const retour = h('div', { class: 'retour' });
-    const actions = h('div', { class: 'actions' });
-    const host = h('div', {});
+    profond(ex.fen, ex.b).catch(() => {}); // prépare le moteur pendant que tu réfléchis
+    const retour = h('div', { class: 'retour' }), actions = h('div', { class: 'actions' }), host = h('div', {});
     ov.in_.innerHTML = '';
     ov.in_.append(h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: quitter }, 'Quitter'), h('span', { class: 'compteur' }, `${k + 1} sur ${file.length}`)),
       h('div', { class: 'issue n' }, 'Trouve le coup'),
-      h('p', { class: 'meta' }, `Position tirée de ta partie contre ${ex.adv}, ${fCourt.format(new Date(ex.t * 1000))}.`), consigne, host, retour, actions);
+      h('p', { class: 'meta' }, `Position tirée de ta partie contre ${ex.adv}, ${fCourt.format(new Date(ex.t * 1000))}.`),
+      h('p', { class: 'consigne' }, `Les ${cote === 'w' ? 'blancs' : 'noirs'} jouent. Trouve le meilleur coup.`), host, retour, actions);
     const pl = plateauJouable(host, { fen: ex.fen, bas: cote, couleur: cote, onMove });
-    const solution = () => {
-      const meil = sanDe(ex.fen, ex.b);
-      pl.bloquer(true); pl.set(ex.fen, { fleches: [[ex.j, '#E58EC0'], [ex.b, '#3F78E0']] });
-      retour.className = 'retour mauvais';
-      retour.innerHTML = '';
-      retour.append(h('b', {}, `Le meilleur coup était ${meil}.`), h('p', {}, `Dans la partie, tu as joué ${sanDe(ex.fen, ex.j)} (flèche rose) : ${TYPES[ex.ty].nom.toLowerCase()}, ${Math.round(ex.p)} points de chances de gagner perdus. ${TYPES[ex.ty].conseil}`));
-      terminer(false);
-    };
+    const suivant = () => h('button', { class: 'btn', onclick: () => { k++; montrer(); } }, k + 1 >= file.length ? 'Voir le bilan' : 'Exercice suivant');
     async function terminer(ok) {
       if (fini_) return; fini_ = true; pl.bloquer(true);
       const premier = essais <= 1 && ok;
       resultats.push({ ex, ok: premier });
       try { await rpc('echecs_exo_resultat', { p_code: S.code, p_id: ex.id, p_ok: premier }); } catch {}
-      if (!premier && !reprise.has(ex.id)) { reprise.add(ex.id); file.push(ex); }
-      actions.innerHTML = '';
-      actions.append(h('button', { class: 'btn', onclick: () => { k++; montrer(); } }, k + 1 >= file.length ? 'Voir le bilan' : 'Exercice suivant'));
+      actions.innerHTML = ''; actions.append(suivant());
     }
-    actions.append(h('button', { class: 'btn discret', onclick: () => { essais = Math.max(essais, 2); solution(); } }, 'Voir la solution'));
+    async function solution() {
+      essais = Math.max(essais, 2); pl.bloquer(true); pl.set(ex.fen, { fleches: [[ex.j, '#55627C'], [ex.b, '#2F7BF6']] });
+      retour.className = 'retour mauvais'; retour.innerHTML = '';
+      retour.append(h('b', {}, `Le meilleur coup était ${sanDe(ex.fen, ex.b)} (flèche bleue).`), h('p', { class: 'ana-msg' }, 'Le moteur prépare l’explication…'));
+      terminer(false);
+      const bloc = await blocPourquoi(ex.fen, ex.j, 'tu', { titre: `Pourquoi ${sanDe(ex.fen, ex.j)}, ton coup de la partie (flèche grise), était moins bon` });
+      retour.innerHTML = ''; retour.append(h('b', {}, `Le meilleur coup était ${sanDe(ex.fen, ex.b)} (flèche bleue).`), bloc);
+    }
+    actions.append(h('button', { class: 'btn discret', onclick: solution }, 'Voir la solution'));
     async function onMove(m) {
       if (fini_) return;
       essais++; pl.bloquer(true);
-      const fenApres = new Chess(ex.fen); fenApres.move({ from: m.from, to: m.to, promotion: m.promotion });
-      pl.set(fenApres.fen(), { dernier: m });
+      const apres = new Chess(ex.fen); apres.move({ from: m.from, to: m.to, promotion: m.promotion });
+      pl.set(apres.fen(), { dernier: m, anime: true });
       retour.className = 'retour'; retour.textContent = 'Le moteur vérifie ton coup…';
-      let bon = false, note = '';
+      let bon = false, R = null, autre = false;
+      try { R = await profond(ex.fen, m.uci); } catch {}
       if (m.uci === ex.b) bon = true;
-      else if (m.uci === ex.j) note = 'C’est le coup que tu avais joué dans la partie.';
-      else {
-        const fen2 = fenApres.fen();
-        const r = fenApres.isCheckmate() ? { e: cote === 'w' ? 10000 : -10000 } : await exclusif(() => getMoteur().evaluer(fen2, { d: 10, cap: 900 }));
-        const mien = e => (cote === 'w' ? e : -e);
-        if (winPct(mien(r.e)) >= winPct(mien(ex.e)) - 6) { bon = true; note = `${m.san} est aussi un bon coup (le moteur préfère ${sanDe(ex.fen, ex.b)}).`; }
+      else if (m.uci !== ex.j && R) {
+        bon = winPct(mien(R.ra.e)) >= winPct(mien(R.rb.e)) - 6; autre = bon;
       }
       if (bon) {
         retour.className = 'retour bon'; retour.innerHTML = '';
-        retour.append(h('b', {}, essais === 1 ? 'Bien joué.' : 'Trouvé, mais pas du premier coup.'), h('p', {}, note || `Dans la partie, tu avais joué ${sanDe(ex.fen, ex.j)} et perdu ${Math.round(ex.p)} points de chances de gagner.`));
+        const titre = m.uci === ex.b ? (essais === 1 ? 'Bien joué.' : 'Trouvé, mais pas du premier coup.') : `${m.san} est aussi un bon coup${essais > 1 ? ' (mais pas du premier coup)' : ''}.`;
+        retour.append(h('b', {}, titre));
+        if (R) {
+          const exp = explicationDe(R, ex.fen, m.uci === ex.b || autre ? R.rb.b : m.uci, 'tu');
+          const lignes = m.uci === ex.b ? [] : [`Le moteur préfère ${sanDe(ex.fen, ex.b)}. Dans la partie, tu avais joué ${sanDe(ex.fen, ex.j)} et perdu ${Math.round(ex.p)} points de chances de gagner.`];
+          retour.append(h('div', { class: 'pourquoi' }, ...lignes.map(t => h('p', {}, t)), h('h4', {}, `Pourquoi ${sanDe(ex.fen, R.rb.b)} est le meilleur coup`), ...exp.meilleur.map(t => h('p', {}, '• ' + t))));
+        }
         terminer(essais === 1);
       } else {
         retour.className = 'retour mauvais'; retour.innerHTML = '';
-        retour.append(h('b', {}, 'Pas tout à fait.'), h('p', {}, note || `${m.san} laisse filer l’avantage. Cherche une autre idée.`));
+        retour.append(h('b', {}, m.uci === ex.j ? 'C’est le coup que tu avais joué dans la partie.' : 'Pas tout à fait.'));
+        if (R) retour.append(noeudExplication(explicationDe(R, ex.fen, m.uci, 'tu'), { sansMeilleur: true, titre: `Pourquoi ${m.san} est moins bon` }));
         actions.innerHTML = '';
-        actions.append(h('button', { class: 'btn', onclick: () => { retour.className = 'retour'; retour.textContent = ''; pl.set(ex.fen); pl.bloquer(false); actions.innerHTML = ''; actions.append(h('button', { class: 'btn discret', onclick: () => { essais = Math.max(essais, 2); solution(); } }, 'Voir la solution')); } }, 'Réessayer'),
-          h('button', { class: 'btn discret', onclick: () => { essais = Math.max(essais, 2); solution(); } }, 'Voir la solution'));
+        actions.append(h('button', { class: 'btn', onclick: () => { retour.className = 'retour'; retour.textContent = ''; pl.set(ex.fen); pl.bloquer(false); actions.innerHTML = ''; actions.append(h('button', { class: 'btn discret', onclick: solution }, 'Voir la solution')); } }, 'Réessayer'),
+          h('button', { class: 'btn discret', onclick: solution }, 'Voir la solution'));
       }
     }
   }
@@ -1225,13 +1390,13 @@ async function seanceFinale(drill, fini) {
     if (jeu.turn() !== 'w' || jeu.isGameOver()) return;
     const fen = jeu.fen(); pl.bloquer(true); etat('Le moteur cherche un bon coup…');
     const r = await exclusif(() => getMoteur().evaluer(fen, { d: 8, cap: 500 }));
-    pl.set(fen, { fleches: r.b ? [[r.b, '#3F78E0']] : [] }); pl.bloquer(false); etat(r.b ? `Indice : essaie ${sanDe(fen, r.b)}.` : 'Pas d’indice disponible.');
+    pl.set(fen, { fleches: r.b ? [[r.b, '#2F7BF6']] : [] }); pl.bloquer(false); etat(r.b ? `Indice : essaie ${sanDe(fen, r.b)}.` : 'Pas d’indice disponible.');
   } }, 'Indice');
   actions.append(bIndice, bRec);
   async function onMove(m) {
     pl.bloquer(true);
     const mv = jeu.move({ from: m.from, to: m.to, promotion: m.promotion }); nb++;
-    pl.set(jeu.fen(), { dernier: mv });
+    pl.set(jeu.fen(), { dernier: mv, anime: true });
     if (jeu.isCheckmate()) {
       termine = true; retour.className = 'retour bon'; retour.innerHTML = '';
       retour.append(h('b', {}, `Échec et mat en ${nb} coup${nb > 1 ? 's' : ''}.`), h('p', {}, nb <= drill.obj ? 'Objectif atteint.' : `L’objectif était ${drill.obj} coups : refais-le pour t’améliorer.`));
@@ -1243,7 +1408,7 @@ async function seanceFinale(drill, fini) {
     const r = await exclusif(() => getMoteur().evaluer(fen, { d: 6, cap: 400 }));
     if (!r.b) { retour.textContent = 'Le moteur n’a pas de réponse.'; return; }
     const rep = jeu.move({ from: r.b.slice(0, 2), to: r.b.slice(2, 4), promotion: r.b[4] });
-    pl.set(jeu.fen(), { dernier: rep });
+    pl.set(jeu.fen(), { dernier: rep, anime: true });
     if (jeu.isGameOver()) { retour.className = 'retour mauvais'; retour.textContent = 'Partie nulle ou pat. Recommence.'; return; }
     etat(`Coup ${nb} joué. À toi de jouer.`); pl.bloquer(false);
   }
@@ -1335,6 +1500,7 @@ function demarrer() {
   aller(S.tab);
 }
 async function init() {
+  document.body.insertAdjacentHTML('afterbegin', SPRITE);
   $$('nav.tabs button').forEach(b => b.addEventListener('click', () => aller(b.dataset.t)));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   addEventListener('resize', () => { if (S.tab === 'accueil') { clearTimeout(init.rt); init.rt = setTimeout(() => { const c = $('.courbe'); if (c) { c.dataset.anime = '1'; rendre(); } }, 150); } });
