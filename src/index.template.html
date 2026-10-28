@@ -18,16 +18,19 @@
 <main id="app">
   <section class="vue" id="v-accueil" aria-label="Accueil"></section>
   <section class="vue" id="v-parties" aria-label="Parties"></section>
+  <section class="vue" id="v-entrainer" aria-label="Entraîner"></section>
   <section class="vue" id="v-ouvertures" aria-label="Ouvertures"></section>
   <section class="vue" id="v-reglages" aria-label="Réglages"></section>
 </main>
 <nav class="tabs" aria-label="Navigation"><div class="in">
   <button data-t="accueil"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 8-9"/><path d="M16 5h4v4"/></svg>Accueil</button>
   <button data-t="parties"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Parties</button>
+  <button data-t="entrainer"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg>Entraîner</button>
   <button data-t="ouvertures"><svg viewBox="0 0 24 24"><path d="M6 4v6m0 0a3 3 0 103 3m-3-3a3 3 0 013 3m9-9v6a4 4 0 01-4 4H9"/><circle cx="6" cy="4" r="1.5"/><circle cx="18" cy="4" r="1.5"/></svg>Ouvertures</button>
   <button data-t="reglages"><svg viewBox="0 0 24 24"><path d="M4 7h10m4 0h2M4 17h2m4 0h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Réglages</button>
 </div></nav>
 <div id="feuille" class="feuille" role="dialog" aria-modal="true" aria-label="Rejeu de la partie"></div>
+<div id="entrain" class="feuille entrain" role="dialog" aria-modal="true" aria-label="Entraînement"></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>/*JS*/</script>
 </body>

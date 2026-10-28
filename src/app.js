@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js';
-import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval } from './analyse.js';
+import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval, winPct } from './analyse.js';
 
 const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzeXJyY3Jrbnhka2RzeGtvb29hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyODQyMzMsImV4cCI6MjEwNjg2MDIzM30.4ks8YNW4oYoPbSOiBT4Y9UCotErus8aydDaQUDm7crs';
@@ -260,7 +260,9 @@ function vueAccueil() {
     }
   }
   v.append(bilan);
-  v.append(blocErreurs(per));
+  v.append(blocProgression(per), blocTypes(per), blocGaches(per), blocAbandons(per));
+  const det = h('details', { class: 'plie' }, h('summary', {}, 'Où et quand tu fais des fautes'), blocErreurs(per));
+  v.append(h('section', { class: 'bloc' }, det));
   const rec = h('section', { class: 'bloc', style: 'padding-left:0;padding-right:0' }, h('h2', { style: 'padding:0 20px' }, 'Dernières parties'));
   per.slice(-6).reverse().forEach(g => rec.append(ligPartie(g)));
   rec.append(h('button', { class: 'plus', onclick: () => aller('parties') }, 'Voir toutes les parties'));
@@ -326,6 +328,108 @@ function blocErreurs(per) {
   if (A.nPerdu >= 3) { const k = ['o', 'm', 'f'].sort((a, b) => A.ptPerdu[b] - A.ptPerdu[a])[0]; if (A.ptPerdu[k] >= 2) conseils.push(`Quand tu perds, la partie bascule le plus souvent dans ${nomPh[k]} (${A.ptPerdu[k]} fois sur ${A.nPerdu} défaites).`); }
   if (A.prec.length) conseils.push(`Ta précision moyenne sur les parties analysées est de ${Math.round(A.prec.reduce((x, y) => x + y, 0) / A.prec.length)} %.`);
   if (conseils.length) sec.append(h('h3', { class: 'sous-titre' }, 'Ce que ça dit'), h('div', { class: 'conseils' }, conseils.map(t => h('p', {}, t))));
+  return sec;
+}
+
+
+/* ---------- statistiques utiles : progression, types de fautes, avantages gâchés, abandons ---------- */
+const analysees = per => per.filter(g => S.ana[g.u] && S.ana[g.u].st);
+function lundi(d) { const j = (d.getDay() + 6) % 7; return new Date(d.getFullYear(), d.getMonth(), d.getDate() - j).getTime(); }
+const sectionNue = (titre, sous) => h('section', { class: 'bloc' }, h('h2', {}, titre, sous && h('small', {}, sous)));
+
+function blocProgression(per) {
+  const A = analysees(per);
+  const sec = sectionNue('Ta progression', A.length ? `${A.length} parties analysées` : '');
+  const sem = new Map();
+  for (const g of A) {
+    const r = S.ana[g.u]; const cn = g.co === 'blancs' ? r.cw : r.cb;
+    const n = r.st.ph.o[0] + r.st.ph.m[0] + r.st.ph.f[0];
+    const k = lundi(g.date); const w = sem.get(k) || { k, parties: 0, coups: 0, graves: 0 };
+    w.parties++; w.coups += n; w.graves += cn.g + cn.e; sem.set(k, w);
+  }
+  const semaines = [...sem.values()].filter(w => w.parties >= 2 && w.coups >= 40).sort((a, b) => a.k - b.k).slice(-12);
+  if (semaines.length < 2) {
+    sec.append(h('p', { class: 'ana-msg' }, 'La courbe apparaît quand tu as des parties analysées sur au moins deux semaines. Ce qu’on suit ici : tes gaffes et erreurs pour 100 coups. Elle baisse quand tu progresses, souvent avant ton classement.'));
+    return sec;
+  }
+  const taux_ = w => (100 * w.graves) / w.coups;
+  const W = 340, H = 130, bas = 22, haut = 14, bw = Math.min(26, (W / semaines.length) * 0.62);
+  const maxi = Math.max(...semaines.map(taux_), 1) * 1.15;
+  const X = i => ((i + 0.5) / semaines.length) * W;
+  const barres = semaines.map((w, i) => {
+    const hh = (taux_(w) / maxi) * (H - bas - haut), x = X(i) - bw / 2, y = H - bas - hh;
+    const lab = new Date(w.k).toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw}" height="${hh.toFixed(1)}" rx="5" fill="${i === semaines.length - 1 ? '#6A58C8' : '#B9A6F8'}"/>` +
+      `<text x="${X(i).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="#1D2140">${taux_(w).toFixed(1).replace('.', ',')}</text>` +
+      `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#646A8F">${lab}</text>`;
+  }).join('');
+  sec.append(h('div', { class: 'prog-graph', html: `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Gaffes et erreurs pour 100 coups, par semaine">${barres}</svg>` }));
+  sec.append(h('p', { class: 'ana-msg', style: 'margin-top:6px' }, 'Gaffes et erreurs pour 100 coups, par semaine (lundi de la semaine en bas). Plus c’est bas, mieux c’est.'));
+  const n = semaines.length, k = Math.min(3, Math.floor(n / 2));
+  const moy = a => a.reduce((x, y) => x + taux_(y), 0) / a.length;
+  const recent = moy(semaines.slice(-k)), avant = moy(semaines.slice(-2 * k, -k));
+  const diff = ((recent - avant) / Math.max(avant, 0.1)) * 100;
+  const phrase = Math.abs(diff) < 8 ? `Stable sur les dernières semaines : environ ${fmtTaux(recent)} fautes graves pour 100 coups.`
+    : diff < 0 ? `Bonne tendance : ${Math.round(-diff)} % de fautes graves en moins par rapport aux semaines d’avant (${fmtTaux(avant)} puis ${fmtTaux(recent)} pour 100 coups).`
+      : `Les fautes graves augmentent : ${Math.round(diff)} % de plus que les semaines d’avant (${fmtTaux(avant)} puis ${fmtTaux(recent)} pour 100 coups).`;
+  sec.append(h('div', { class: 'conseils' }, h('p', {}, phrase)));
+  return sec;
+}
+
+function blocTypes(per) {
+  const A = analysees(per).filter(g => S.ana[g.u].ty);
+  const sec = sectionNue('Quel type de fautes', A.length ? `${A.length} parties analysées` : '');
+  if (!A.length) { sec.append(h('p', { class: 'ana-msg' }, 'Les types de fautes apparaissent dès que des parties sont analysées.')); return sec; }
+  const T = { mat: 0, capt: 0, prise: 0, menace: 0, autre: 0 };
+  for (const g of A) for (const k of Object.keys(T)) T[k] += S.ana[g.u].ty[k] || 0;
+  const tot = Object.values(T).reduce((x, y) => x + y, 0);
+  if (!tot) { sec.append(h('p', { class: 'ana-msg' }, 'Aucune faute grave repérée sur cette période. Bravo.')); return sec; }
+  const ordre = Object.keys(T).sort((a, b) => T[b] - T[a]);
+  const L = h('div', { class: 'lignes' });
+  ordre.forEach(k => { if (T[k]) L.append(ligneKV(TYPES[k].nom, `${T[k]} fois`, Math.round((100 * T[k]) / tot) + ' %', (100 * T[k]) / tot)); });
+  sec.append(L);
+  const premier = ordre[0];
+  sec.append(h('div', { class: 'conseils', style: 'margin-top:12px' }, h('p', {}, h('b', {}, `Ta faute n°1 : ${TYPES[premier].nom.toLowerCase()} (${Math.round((100 * T[premier]) / tot)} %). `), TYPES[premier].conseil)));
+  return sec;
+}
+
+function blocGaches(per) {
+  const A = analysees(per).filter(g => S.ana[g.u].mx != null);
+  const sec = sectionNue('Avantages gâchés');
+  const gagnantes = A.filter(g => S.ana[g.u].mx >= 80);
+  if (A.length < 5) { sec.append(h('p', { class: 'ana-msg' }, 'Cette section apparaît quand au moins 5 parties sont analysées.')); return sec; }
+  const gagnees = gagnantes.filter(g => g.issue === 'g').length, gachees = gagnantes.filter(g => g.issue !== 'g');
+  sec.append(h('p', { class: 'ana-msg' }, gagnantes.length ? `Dans ${gagnantes.length} parties, tu as eu au moins 80 % de chances de gagner. Tu en as gagné ${gagnees} (${pct(gagnees, gagnantes.length)} %).` : 'Aucune partie avec une position clairement gagnante sur cette période.'));
+  if (gachees.length) {
+    sec.append(h('div', { class: 'liste-a' }, gachees.sort((a, b) => S.ana[b.u].mx - S.ana[a.u].mx).slice(0, 5).map(g => {
+      const r = S.ana[g.u];
+      return h('button', { class: 'ligne-a', onclick: () => ouvrirPartie(g) },
+        h('span', { class: 'corps' }, h('div', { class: 'adv' }, g.adv, h('span', {}, fCourt.format(g.date))), h('div', { class: 'det' }, `Au coup ${Math.ceil(r.mxp / 2)}, ${r.mx} % de chances de gagner. Résultat : ${g.issue === 'p' ? 'défaite' : 'nulle'}.`)),
+        h('span', { class: 'droite' }, h('span', { class: 'delta neg' }, `${r.mx} % → ${r.fin} %`)));
+    })));
+    sec.append(h('p', { class: 'ana-msg', style: 'margin-top:8px' }, 'Touche une partie pour revoir où ça s’est joué. Quand tu es gagnant : échange les pièces, protège ton roi et évite les coups risqués.'));
+  }
+  return sec;
+}
+
+function blocAbandons(per) {
+  const A = analysees(per).filter(g => S.ana[g.u].rs != null);
+  const sec = sectionNue('Abandons');
+  if (A.length < 5) { sec.append(h('p', { class: 'ana-msg' }, 'Cette section apparaît quand au moins 5 parties sont analysées.')); return sec; }
+  const ab = A.filter(g => S.ana[g.u].rs === 1 && g.issue === 'p');
+  const tot = ab.length;
+  const tot_ = A.length;
+  const tot2 = ab.filter(g => S.ana[g.u].fin >= 30);
+  sec.append(h('p', { class: 'ana-msg' }, tot ? `Tu as abandonné ${tot} parties sur ${tot_} analysées. Dans ${tot2.length} d’entre elles, le moteur te donnait encore au moins 30 % de chances de gagner : tu aurais pu continuer.` : 'Tu n’as abandonné aucune partie analysée sur cette période.'));
+  if (tot2.length) {
+    sec.append(h('div', { class: 'liste-a' }, tot2.sort((a, b) => S.ana[b.u].fin - S.ana[a.u].fin).slice(0, 4).map(g => {
+      const r = S.ana[g.u];
+      return h('button', { class: 'ligne-a', onclick: () => ouvrirPartie(g) },
+        h('span', { class: 'corps' }, h('div', { class: 'adv' }, g.adv, h('span', {}, fCourt.format(g.date))), h('div', { class: 'det' }, `Abandon alors qu’il te restait environ ${r.fin} % de chances de gagner.`))
+      );
+    })));
+    sec.append(h('p', { class: 'ana-msg', style: 'margin-top:8px' }, 'Estimation du moteur à ton niveau d’analyse. Contre un adversaire de ton niveau, une position difficile se retourne souvent : continue tant que ce n’est pas perdu.'));
+  }
   return sec;
 }
 
@@ -524,15 +628,79 @@ function contexteDe(pgn, pos, coups, nv) {
   return { k: prm.k, elo: prm.elo, ph, rem, spent, base: ok ? base : null };
 }
 
+
+/* ---------- types de fautes, avantages gâchés, exercices ---------- */
+const VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+const TYPES = {
+  mat: { nom: 'Mat manqué', conseil: 'Quand l’adversaire est coincé, cherche tous les échecs avant de jouer un coup calme.' },
+  capt: { nom: 'Capture manquée', conseil: 'Avant de jouer, regarde si une pièce adverse est à prendre ou mal défendue.' },
+  prise: { nom: 'Pièce ou pion laissé en prise', conseil: 'Avant de valider ton coup, demande-toi : qu’est-ce que l’adversaire peut prendre après ?' },
+  menace: { nom: 'Menace de l’adversaire non vue', conseil: 'Après chaque coup adverse, cherche ses échecs, ses captures et ses menaces avant de répondre.' },
+  autre: { nom: 'Coup qui dégrade la position', conseil: 'Développe tes pièces, protège ton roi et vérifie que chaque coup a un but.' }
+};
+const essaiCoup = (fen, uci) => {
+  try { const c = new Chess(fen); const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] }); return { c, m }; } catch { return null; }
+};
+function typeFaute(i, plies, pos, coups, moi) {
+  const mien = e => (moi === 'w' ? e : -e);
+  if (mien(plies[i - 1].e) >= 9000 && mien(plies[i].e) < 9000) return 'mat';
+  const bestU = plies[i - 1].b, joue = coups[i - 1];
+  if (bestU && bestU !== uciDe(joue)) {
+    const r = essaiCoup(pos[i - 1].fen, bestU);
+    if (r && r.m.captured && VAL[r.m.captured] >= 3 && (!joue.captured || VAL[joue.captured] < VAL[r.m.captured])) return 'capt';
+  }
+  const oppU = plies[i].b;
+  if (oppU) {
+    const r = essaiCoup(pos[i].fen, oppU);
+    if (r && r.m.captured) {
+      const defs = new Chess(pos[i].fen).attackers(r.m.to, moi).length;
+      if (defs === 0 || VAL[r.m.captured] - VAL[r.m.piece] >= 2) return 'prise';
+    }
+    if (r && /[+#]/.test(r.m.san)) return 'menace';
+  }
+  return 'autre';
+}
+function enrichir(g, calc, plies, pos, coups, moi) {
+  const ty = { mat: 0, capt: 0, prise: 0, menace: 0, autre: 0 };
+  for (const c of calc.coups) if (c.mover === moi && (c.cls === 'g' || c.cls === 'e')) ty[typeFaute(c.i, plies, pos, coups, moi)]++;
+  const n = plies.length - 1, M = k => (moi === 'w' ? calc.W[k] : 100 - calc.W[k]);
+  let mx = -1, mxp = 0;
+  for (let k = Math.min(10, n); k <= n; k++) if (M(k) > mx) { mx = M(k); mxp = k; }
+  Object.assign(calc.resume, { ty, mx: Math.round(mx), mxp, fin: Math.round(M(n)), rs: g.res === 'resigned' ? 1 : 0 });
+}
+async function exercicesDe(g, calc, plies, pos, coups, moi, annule) {
+  const mien = e => (moi === 'w' ? e : -e);
+  const cands = calc.coups.filter(c => c.mover === moi && (c.cls === 'g' || c.cls === 'e') && plies[c.i - 1].b && plies[c.i - 1].b !== uciDe(coups[c.i - 1]) && c.avant >= 20)
+    .sort((a, b) => b.perte - a.perte).slice(0, 4);
+  const exos = [];
+  await exclusif(async () => {
+    for (const c of cands) {
+      if (annule()) return;
+      const rb = await getMoteur().evaluer(pos[c.i - 1].fen, { d: 12, cap: 1500 });
+      if (!rb.b || rb.b === uciDe(coups[c.i - 1])) continue;
+      const ra = pos[c.i].fin ? { e: plies[c.i].e } : await getMoteur().evaluer(pos[c.i].fen, { d: 12, cap: 1500 });
+      const perte = winPct(mien(rb.e)) - winPct(mien(ra.e));
+      if (perte < 10 || winPct(mien(rb.e)) < 15) continue;
+      exos.push({ ply: c.i, fen: pos[c.i - 1].fen, best: rb.b, joue: uciDe(coups[c.i - 1]), cls: c.cls, perte: Math.round(perte * 10) / 10, type: typeFaute(c.i, plies, pos, coups, moi), coul: moi, e_av: rb.e });
+    }
+  });
+  return exos;
+}
+
 async function analyserPartie(g, pgn, progres, annule, nv = niveauDe(g)) {
   const { coups, pos } = positionsDe(pgn);
   const prm = paramsElo(nv);
   const ctx = contexteDe(pgn, pos, coups, nv);
   const ev = await exclusif(() => evaluerPositions(getMoteur(), pos, prm, progres, annule));
   if (!ev) return null;
-  const calc = calculer(ev, g.co === 'blancs' ? 'w' : 'b', g.issue, ctx);
+  const moi = g.co === 'blancs' ? 'w' : 'b';
+  const calc = calculer(ev, moi, g.issue, ctx);
   const plies = ev.map(x => ({ e: x.e, b: x.b }));
-  try { await rpc('echecs_analyse_ecrire', { p_code: S.code, p_url: g.u, p_moteur: 'stockfish-19-lite-single', p_temps_ms: prm.d, p_plies: plies, p_resume: calc.resume }); } catch {}
+  enrichir(g, calc, plies, pos, coups, moi);
+  let exos = [];
+  try { exos = await exercicesDe(g, calc, plies, pos, coups, moi, annule); } catch {}
+  if (annule()) return null;
+  try { await rpc('echecs_analyse_enregistrer', { p_code: S.code, p_url: g.u, p_moteur: 'stockfish-19-lite-single', p_temps_ms: prm.d, p_plies: plies, p_resume: calc.resume, p_exos: exos }); } catch {}
   S.ana[g.u] = calc.resume; store.set('ec_ana', S.ana); majBadge(g.u);
   return { plies, calc, nv: prm.elo };
 }
@@ -572,7 +740,7 @@ const SYMB = { i: '?!', e: '?', g: '??' };
 const NOM_CLS = { i: 'imprécision', e: 'erreur', g: 'gaffe' };
 const pl = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
 
-async function ouvrirPartie(g) {
+async function ouvrirPartie(g, opts = {}) {
   const f = $('#feuille'); f.classList.add('on'); document.body.style.overflow = 'hidden';
   const in_ = h('div', { class: 'in' }, h('div', { class: 'charge' }, 'Chargement de la partie'));
   f.innerHTML = ''; f.append(in_); f.scrollTop = 0;
@@ -807,15 +975,301 @@ async function ouvrirPartie(g) {
     else etat = 'aucune';
   } catch { etat = 'aucune'; }
   if (etat !== 'calcul') { rendrePanneau(); dessiner(); }
+  if (opts.decisif && ana && ana.calc.pt) { fleches = true; aller_(ana.calc.pt.i - 1); }
 }
 function fermer() {
   const f = $('#feuille'); f._stop?.(); if (f._clavier) document.removeEventListener('keydown', f._clavier);
   f.classList.remove('on'); f.innerHTML = ''; document.body.style.overflow = '';
+  const cb = S.surFermeture; S.surFermeture = null;
   if (S.tab === 'parties' || S.tab === 'accueil') rendre();
+  if (cb) cb();
+}
+
+
+/* ---------- entraînement : échiquier jouable, exercices, finales, plan du jour ---------- */
+const dateLocale = () => new Date().toLocaleDateString('sv-SE'); // AAAA-MM-JJ
+const GL = GLYPHE;
+function flecheSvg(uci, couleur, bas) {
+  const ctr = nom => { const c = 'abcdefgh'.indexOf(nom[0]), r = 8 - +nom[1]; return [(bas === 'w' ? c : 7 - c) + 0.5, (bas === 'w' ? r : 7 - r) + 0.5]; };
+  const [x1, y1] = ctr(uci.slice(0, 2)), [x2, y2] = ctr(uci.slice(2, 4));
+  const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, t = 0.34;
+  const bx = x2 - ux * t * 1.1, by = y2 - uy * t * 1.1, px = -uy * t * 0.62, py = ux * t * 0.62;
+  return `<line x1="${x1}" y1="${y1}" x2="${bx}" y2="${by}" stroke="${couleur}" stroke-width=".16" stroke-linecap="round" opacity=".92"/><polygon points="${x2 - ux * 0.04},${y2 - uy * 0.04} ${bx + px},${by + py} ${bx - px},${by - py}" fill="${couleur}" opacity=".92"/>`;
+}
+
+/* échiquier sur lequel on joue en touchant une pièce puis sa case d'arrivée */
+function plateauJouable(host, opts) {
+  const E = { fen: opts.fen, bas: opts.bas, dernier: null, fleches: [], sel: null, cibles: [], bloque: false };
+  const plateau = h('div', { class: 'plateau', role: 'application', 'aria-label': 'Échiquier : touche une pièce puis sa case d’arrivée' });
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 8 8'); svg.setAttribute('class', 'fleches');
+  host.innerHTML = ''; host.append(h('div', { class: 'plateau-env' }, plateau, svg));
+  function rendre() {
+    plateau.innerHTML = '';
+    const c = new Chess(E.fen), B = c.board();
+    const rangs = E.bas === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0], cols = rangs.slice();
+    rangs.forEach((r, ri) => cols.forEach((cc, ci) => {
+      const nom = 'abcdefgh'[cc] + (8 - r), p = B[r][cc];
+      const cible = E.cibles.find(m => m.to === nom);
+      const cas = h('div', { class: 'case ' + ((r + cc) % 2 ? 'fo' : 'cl') + (E.dernier && (E.dernier.from === nom || E.dernier.to === nom) ? ' der' : '') + (E.sel === nom ? ' sel' : ''), onclick: () => clic(nom) });
+      if (p) cas.append(h('span', { class: 'p ' + (p.color === 'w' ? 'b' : 'n') }, GL[p.type] + '︎'));
+      if (cible) cas.append(h('span', { class: 'pt' + (p ? ' pr' : '') }));
+      if (ci === 0) cas.append(h('span', { class: 'co r' }, String(8 - r)));
+      if (ri === 7) cas.append(h('span', { class: 'co f' }, 'abcdefgh'[cc]));
+      plateau.append(cas);
+    }));
+    svg.innerHTML = E.fleches.map(f => flecheSvg(f[0], f[1], E.bas)).join('');
+  }
+  function clic(nom) {
+    if (E.bloque) return;
+    const c = new Chess(E.fen), p = c.get(nom);
+    if (E.sel) {
+      const mv = E.cibles.find(m => m.to === nom && (!m.promotion || m.promotion === 'q'));
+      if (mv) { E.sel = null; E.cibles = []; rendre(); opts.onMove({ from: mv.from, to: mv.to, promotion: mv.promotion, san: mv.san, uci: mv.from + mv.to + (mv.promotion || '') }); return; }
+    }
+    if (p && p.color === c.turn() && (!opts.couleur || p.color === opts.couleur)) { E.sel = nom; E.cibles = c.moves({ square: nom, verbose: true }); } else { E.sel = null; E.cibles = []; }
+    rendre();
+  }
+  rendre();
+  return { set(fen, o = {}) { E.fen = fen; E.dernier = o.dernier || null; E.fleches = o.fleches || []; E.sel = null; E.cibles = []; rendre(); }, bloquer(b) { E.bloque = b; } };
+}
+
+/* ----- données des exercices ----- */
+async function chargerExos() {
+  try { S.exos = await rpc('echecs_exos_lister', { p_code: S.code }); store.set('ec_exos', S.exos); } catch { S.exos = S.exos || store.get('ec_exos', []); }
+  return S.exos;
+}
+const maintenant = () => Date.now() / 1000;
+const exosDus = () => (S.exos || []).filter(x => x.pr <= maintenant()).sort((a, b) => a.bt - b.bt || b.p - a.p);
+const exosMaitrises = () => (S.exos || []).filter(x => x.bt >= 4).length;
+
+/* ----- plan du jour et série ----- */
+function etatPlan() {
+  const p = store.get('ec_plan', null);
+  if (!p || p.d !== dateLocale()) return { d: dateLocale(), fait: {} };
+  return p;
+}
+function marquerFait(etape) {
+  const p = etatPlan(); p.fait[etape] = true; store.set('ec_plan', p);
+  const dispo = etapesDispo();
+  if (dispo.every(e => p.fait[e])) { const j = store.get('ec_jours', []); if (!j.includes(p.d)) { j.push(p.d); store.set('ec_jours', j.slice(-400)); } }
+}
+function etapesDispo() {
+  const e = [];
+  if (exosDus().length || (S.exos || []).length) e.push('exos');
+  e.push('finale');
+  if (momentDecisifCible()) e.push('moment');
+  return e;
+}
+function serie() {
+  const jours = new Set(store.get('ec_jours', []));
+  let n = 0; const d = new Date();
+  if (!jours.has(d.toLocaleDateString('sv-SE'))) d.setDate(d.getDate() - 1);
+  while (jours.has(d.toLocaleDateString('sv-SE'))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function momentDecisifCible() {
+  const c = PARTIES.filter(g => g.r === 'chess' && S.ana[g.u] && S.ana[g.u].pt && g.issue !== 'n').slice(-15).reverse();
+  return c.find(g => g.issue === 'p') || c[0] || null;
+}
+
+/* ----- fenêtre plein écran d'entraînement ----- */
+function ouvrirEntrain() {
+  const f = $('#entrain'); f.classList.add('on'); document.body.style.overflow = 'hidden';
+  const in_ = h('div', { class: 'in' }); f.innerHTML = ''; f.append(in_); f.scrollTop = 0;
+  S.manuel++; moteur && moteur.stop();
+  return { in_, fermer() { f.classList.remove('on'); f.innerHTML = ''; document.body.style.overflow = ''; S.manuel = Math.max(0, S.manuel - 1); autoAnalyse(); } };
+}
+
+/* ----- séance d'exercices tirés de tes gaffes ----- */
+async function seanceExos(liste, fini) {
+  const ov = ouvrirEntrain();
+  const file = liste.slice(); const reprise = new Set();
+  const resultats = [];
+  let k = 0;
+  const quitter = () => { ov.fermer(); fini && fini(resultats); };
+  function bilan() {
+    const bons = resultats.filter(r => r.ok).length;
+    ov.in_.innerHTML = '';
+    ov.in_.append(h('div', { class: 'haut' }, h('span', {}), h('button', { class: 'fermer', onclick: quitter }, 'Terminer')),
+      h('div', { class: 'issue n' }, `${bons} réussi${bons > 1 ? 's' : ''} sur ${resultats.length}`),
+      h('p', { class: 'meta' }, bons === resultats.length ? 'Séance parfaite. Ces positions reviendront dans quelques jours pour vérifier que tu les retiens.' : 'Les positions ratées reviendront bientôt : refaire les mêmes erreurs corrigées, c’est comme ça qu’elles disparaissent.'),
+      h('div', { class: 'lignes' }, resultats.map(r => h('div', { class: 'ligne-kv' }, h('div', { class: 'k' }, TYPES[r.ex.ty].nom, h('small', {}, `Contre ${r.ex.adv}`)), h('div', { class: 'v', style: 'color:' + (r.ok ? 'var(--bleu-t)' : 'var(--rose-t)') }, r.ok ? 'Réussi' : 'À revoir')))),
+      h('button', { class: 'btn', style: 'margin-top:20px', onclick: quitter }, 'Terminer'));
+  }
+  function montrer() {
+    if (k >= file.length) return bilan();
+    const ex = file[k], c0 = new Chess(ex.fen), cote = ex.co;
+    let essais = 0, fini_ = false;
+    const consigne = h('p', { class: 'consigne' }, `Les ${cote === 'w' ? 'blancs' : 'noirs'} jouent. Trouve le meilleur coup.`);
+    const retour = h('div', { class: 'retour' });
+    const actions = h('div', { class: 'actions' });
+    const host = h('div', {});
+    ov.in_.innerHTML = '';
+    ov.in_.append(h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: quitter }, 'Quitter'), h('span', { class: 'compteur' }, `${k + 1} sur ${file.length}`)),
+      h('div', { class: 'issue n' }, 'Trouve le coup'),
+      h('p', { class: 'meta' }, `Position tirée de ta partie contre ${ex.adv}, ${fCourt.format(new Date(ex.t * 1000))}.`), consigne, host, retour, actions);
+    const pl = plateauJouable(host, { fen: ex.fen, bas: cote, couleur: cote, onMove });
+    const solution = () => {
+      const meil = sanDe(ex.fen, ex.b);
+      pl.bloquer(true); pl.set(ex.fen, { fleches: [[ex.j, '#E58EC0'], [ex.b, '#3F78E0']] });
+      retour.className = 'retour mauvais';
+      retour.innerHTML = '';
+      retour.append(h('b', {}, `Le meilleur coup était ${meil}.`), h('p', {}, `Dans la partie, tu as joué ${sanDe(ex.fen, ex.j)} (flèche rose) : ${TYPES[ex.ty].nom.toLowerCase()}, ${Math.round(ex.p)} points de chances de gagner perdus. ${TYPES[ex.ty].conseil}`));
+      terminer(false);
+    };
+    async function terminer(ok) {
+      if (fini_) return; fini_ = true; pl.bloquer(true);
+      const premier = essais <= 1 && ok;
+      resultats.push({ ex, ok: premier });
+      try { await rpc('echecs_exo_resultat', { p_code: S.code, p_id: ex.id, p_ok: premier }); } catch {}
+      if (!premier && !reprise.has(ex.id)) { reprise.add(ex.id); file.push(ex); }
+      actions.innerHTML = '';
+      actions.append(h('button', { class: 'btn', onclick: () => { k++; montrer(); } }, k + 1 >= file.length ? 'Voir le bilan' : 'Exercice suivant'));
+    }
+    actions.append(h('button', { class: 'btn discret', onclick: () => { essais = Math.max(essais, 2); solution(); } }, 'Voir la solution'));
+    async function onMove(m) {
+      if (fini_) return;
+      essais++; pl.bloquer(true);
+      const fenApres = new Chess(ex.fen); fenApres.move({ from: m.from, to: m.to, promotion: m.promotion });
+      pl.set(fenApres.fen(), { dernier: m });
+      retour.className = 'retour'; retour.textContent = 'Le moteur vérifie ton coup…';
+      let bon = false, note = '';
+      if (m.uci === ex.b) bon = true;
+      else if (m.uci === ex.j) note = 'C’est le coup que tu avais joué dans la partie.';
+      else {
+        const fen2 = fenApres.fen();
+        const r = fenApres.isCheckmate() ? { e: cote === 'w' ? 10000 : -10000 } : await exclusif(() => getMoteur().evaluer(fen2, { d: 10, cap: 900 }));
+        const mien = e => (cote === 'w' ? e : -e);
+        if (winPct(mien(r.e)) >= winPct(mien(ex.e)) - 6) { bon = true; note = `${m.san} est aussi un bon coup (le moteur préfère ${sanDe(ex.fen, ex.b)}).`; }
+      }
+      if (bon) {
+        retour.className = 'retour bon'; retour.innerHTML = '';
+        retour.append(h('b', {}, essais === 1 ? 'Bien joué.' : 'Trouvé, mais pas du premier coup.'), h('p', {}, note || `Dans la partie, tu avais joué ${sanDe(ex.fen, ex.j)} et perdu ${Math.round(ex.p)} points de chances de gagner.`));
+        terminer(essais === 1);
+      } else {
+        retour.className = 'retour mauvais'; retour.innerHTML = '';
+        retour.append(h('b', {}, 'Pas tout à fait.'), h('p', {}, note || `${m.san} laisse filer l’avantage. Cherche une autre idée.`));
+        actions.innerHTML = '';
+        actions.append(h('button', { class: 'btn', onclick: () => { retour.className = 'retour'; retour.textContent = ''; pl.set(ex.fen); pl.bloquer(false); actions.innerHTML = ''; actions.append(h('button', { class: 'btn discret', onclick: () => { essais = Math.max(essais, 2); solution(); } }, 'Voir la solution')); } }, 'Réessayer'),
+          h('button', { class: 'btn discret', onclick: () => { essais = Math.max(essais, 2); solution(); } }, 'Voir la solution'));
+      }
+    }
+  }
+  montrer();
+}
+
+/* ----- exercices de finale : mater contre le moteur ----- */
+const DRILLS = [
+  { id: 'q1', titre: 'Mat avec la dame et le roi', fen: '8/8/8/3k4/8/8/2Q5/4K3 w - - 0 1', obj: 12, astuce: 'Rapproche ton roi sans jamais laisser le roi adverse sans case : attention au pat.' },
+  { id: 'q2', titre: 'Mat avec la dame, roi dans le coin', fen: '7k/8/8/8/8/8/5Q2/K7 w - - 0 1', obj: 10, astuce: 'Réduis l’espace du roi adverse case par case avec la dame, puis amène ton roi.' },
+  { id: 'r1', titre: 'Mat avec la tour et le roi', fen: '8/8/8/4k3/8/8/8/R3K3 w - - 0 1', obj: 25, astuce: 'Coupe le roi adverse avec la tour, avance ton roi, puis fais reculer l’adversaire vers le bord.' },
+  { id: 'r2', titre: 'Mat en un coup avec la tour', fen: '6k1/8/6K1/8/8/8/8/R7 w - - 0 1', obj: 1, astuce: 'Ton roi tient les cases de fuite : il ne manque que l’échec de la tour.' },
+  { id: 'rr', titre: 'Mat avec deux tours (l’escalier)', fen: '8/8/8/3k4/8/8/8/R3K2R w - - 0 1', obj: 20, astuce: 'Une tour donne échec, l’autre coupe la rangée suivante, et on pousse le roi vers le bord.' },
+  { id: 'q3', titre: 'Mat avec la dame, roi adverse au centre', fen: '8/8/8/8/8/4k3/8/K2Q4 w - - 0 1', obj: 12, astuce: 'Utilise la dame pour limiter le roi adverse, ne cherche pas l’échec à tout prix.' }
+];
+function drillDuJour() { const j = Math.floor(Date.now() / 86400000); return DRILLS[j % DRILLS.length]; }
+
+async function seanceFinale(drill, fini) {
+  const ov = ouvrirEntrain();
+  let nb = 0, termine = false;
+  const retour = h('div', { class: 'retour' }), host = h('div', {}), actions = h('div', { class: 'actions' });
+  const quitter = () => { ov.fermer(); fini && fini(termine); };
+  ov.in_.append(h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: quitter }, 'Quitter'), h('span', { class: 'compteur' }, 'Finale')),
+    h('div', { class: 'issue n' }, drill.titre),
+    h('p', { class: 'meta' }, `Tu joues les blancs contre le moteur. Objectif : mater en ${drill.obj} coup${drill.obj > 1 ? 's' : ''} ou moins. ${drill.astuce}`), host, retour, actions);
+  const pl = plateauJouable(host, { fen: drill.fen, bas: 'w', couleur: 'w', onMove });
+  let jeu = new Chess(drill.fen);
+  const etat = t => { retour.className = 'retour'; retour.textContent = t; };
+  etat('À toi de jouer.');
+  const bRec = h('button', { class: 'btn discret', onclick: () => { jeu = new Chess(drill.fen); nb = 0; pl.set(drill.fen); pl.bloquer(false); etat('À toi de jouer.'); } }, 'Recommencer');
+  const bIndice = h('button', { class: 'btn discret', onclick: async () => {
+    if (jeu.turn() !== 'w' || jeu.isGameOver()) return;
+    const fen = jeu.fen(); pl.bloquer(true); etat('Le moteur cherche un bon coup…');
+    const r = await exclusif(() => getMoteur().evaluer(fen, { d: 8, cap: 500 }));
+    pl.set(fen, { fleches: r.b ? [[r.b, '#3F78E0']] : [] }); pl.bloquer(false); etat(r.b ? `Indice : essaie ${sanDe(fen, r.b)}.` : 'Pas d’indice disponible.');
+  } }, 'Indice');
+  actions.append(bIndice, bRec);
+  async function onMove(m) {
+    pl.bloquer(true);
+    const mv = jeu.move({ from: m.from, to: m.to, promotion: m.promotion }); nb++;
+    pl.set(jeu.fen(), { dernier: mv });
+    if (jeu.isCheckmate()) {
+      termine = true; retour.className = 'retour bon'; retour.innerHTML = '';
+      retour.append(h('b', {}, `Échec et mat en ${nb} coup${nb > 1 ? 's' : ''}.`), h('p', {}, nb <= drill.obj ? 'Objectif atteint.' : `L’objectif était ${drill.obj} coups : refais-le pour t’améliorer.`));
+      actions.innerHTML = ''; actions.append(h('button', { class: 'btn', onclick: quitter }, 'Terminer'), bRec); return;
+    }
+    if (jeu.isGameOver()) { retour.className = 'retour mauvais'; retour.textContent = jeu.isStalemate() ? 'Pat : le roi adverse n’a plus de coup mais n’est pas en échec. Recommence.' : 'Partie nulle. Recommence.'; pl.bloquer(true); return; }
+    etat('Le moteur répond…');
+    const fen = jeu.fen();
+    const r = await exclusif(() => getMoteur().evaluer(fen, { d: 6, cap: 400 }));
+    if (!r.b) { retour.textContent = 'Le moteur n’a pas de réponse.'; return; }
+    const rep = jeu.move({ from: r.b.slice(0, 2), to: r.b.slice(2, 4), promotion: r.b[4] });
+    pl.set(jeu.fen(), { dernier: rep });
+    if (jeu.isGameOver()) { retour.className = 'retour mauvais'; retour.textContent = 'Partie nulle ou pat. Recommence.'; return; }
+    etat(`Coup ${nb} joué. À toi de jouer.`); pl.bloquer(false);
+  }
+}
+
+/* ----- onglet Entraîner ----- */
+async function vueEntrainer() {
+  const v = $('#v-entrainer'); v.innerHTML = '';
+  v.append(h('div', { class: 'entete' }, h('h1', {}, 'Entraîner')));
+  if (!S.exos) S.exos = store.get('ec_exos', []);
+  const rendu = () => {
+    const zone = $('#zone-entrainer'); if (!zone) return; zone.innerHTML = '';
+    const dus = exosDus(), tous = S.exos || [], plan = etatPlan(), dispo = etapesDispo(), nSerie = serie();
+    const fait = e => !!plan.fait[e];
+    const lignes = [
+      ['exos', 'Cinq positions tirées de tes gaffes', tous.length ? `${Math.min(5, dus.length)} à travailler aujourd’hui` : 'Analyse des parties pour créer des exercices'],
+      ['finale', 'Un exercice de finale', drillDuJour().titre],
+      ['moment', 'Revoir le moment décisif d’une partie', momentDecisifCible() ? `Contre ${momentDecisifCible().adv}` : 'Disponible quand des parties sont analysées']
+    ].filter(l => dispo.includes(l[0]));
+    const toutFait = lignes.every(l => fait(l[0]));
+    const carte = h('div', { class: 'plan' }, h('div', { class: 'plan-t' }, h('h2', {}, 'Plan du jour'), h('span', { class: 'serie' }, nSerie ? `${nSerie} jour${nSerie > 1 ? 's' : ''} d’affilée` : 'Série à démarrer')));
+    lignes.forEach(([k, t, sub]) => carte.append(h('button', { class: 'etape' + (fait(k) ? ' fait' : ''), onclick: () => faireEtape(k) },
+      h('span', { class: 'coche' }, fait(k) ? '✓' : ''), h('span', { class: 'corps' }, h('div', { class: 'et' }, t), h('div', { class: 'det' }, sub)))));
+    carte.append(h('button', { class: 'btn', style: 'margin-top:14px', disabled: toutFait, onclick: () => lancerPlan() }, toutFait ? 'Plan terminé, à demain' : lignes.some(l => fait(l[0])) ? 'Continuer le plan' : 'Commencer le plan'));
+    zone.append(carte);
+    const bloc = h('div', { class: 'bloc', style: 'padding-top:26px' }, h('h2', {}, 'Mes exercices'));
+    if (!tous.length) bloc.append(h('p', { class: 'ana-msg' }, 'Tes exercices sont créés à partir des gaffes repérées dans tes parties analysées. Ouvre une partie et touche « Analyser », ou laisse l’analyse automatique tourner : les premiers exercices apparaissent ici.'));
+    else {
+      bloc.append(h('div', { class: 'lignes' }, ligneKV('Exercices au total', null, String(tous.length)), ligneKV('À revoir maintenant', null, String(dus.length)), ligneKV('Maîtrisés (réussis plusieurs fois)', null, String(exosMaitrises()))));
+      const dep = dus.length ? dus.slice(0, 20) : tous.slice().sort(() => Math.random() - 0.5).slice(0, 5);
+      bloc.append(h('button', { class: 'btn discret', style: 'margin-top:14px', onclick: () => seanceExos(dep, async () => { await chargerExos(); rendu(); }) }, dus.length ? `M’entraîner librement (${Math.min(20, dus.length)})` : 'Réviser quand même 5 positions'));
+      const types = {}; tous.forEach(x => { types[x.ty] = (types[x.ty] || 0) + 1; });
+      const premier = Object.keys(types).sort((a, b) => types[b] - types[a])[0];
+      if (premier) bloc.append(h('p', { class: 'ana-msg', style: 'margin-top:12px' }, `Tes exercices portent surtout sur : ${TYPES[premier].nom.toLowerCase()}. ${TYPES[premier].conseil}`));
+    }
+    zone.append(bloc);
+    const fin = h('div', { class: 'bloc', style: 'padding-top:26px' }, h('h2', {}, 'Finales de base'), h('p', { class: 'ana-msg' }, 'Mater contre le moteur : un bon réflexe à avoir, et des points gagnés à coup sûr dans les finales.'),
+      h('div', { class: 'liste-a' }, DRILLS.map(d => h('button', { class: 'ligne-a', onclick: () => seanceFinale(d) }, h('span', { class: 'corps' }, h('div', { class: 'adv' }, d.titre), h('div', { class: 'det' }, `Objectif : ${d.obj} coup${d.obj > 1 ? 's' : ''} maximum`))))));
+    zone.append(fin);
+  };
+  v.append(h('div', { id: 'zone-entrainer' }));
+  rendu();
+  await chargerExos(); if (S.tab === 'entrainer') rendu();
+}
+function faireEtape(k, suite) {
+  const fin = () => { marquerFait(k); if (S.tab === 'entrainer') vueEntrainer(); suite && suite(); };
+  if (k === 'exos') {
+    const dus = exosDus().slice(0, 5); const liste = dus.length ? dus : (S.exos || []).slice().sort(() => Math.random() - 0.5).slice(0, 5);
+    if (!liste.length) return fin();
+    seanceExos(liste, async res => { await chargerExos(); if (res.length) fin(); else if (S.tab === 'entrainer') vueEntrainer(); });
+  } else if (k === 'finale') seanceFinale(drillDuJour(), ok => { if (ok) fin(); else if (S.tab === 'entrainer') vueEntrainer(); });
+  else if (k === 'moment') {
+    const g = momentDecisifCible(); if (!g) return fin();
+    S.surFermeture = fin; ouvrirPartie(g, { decisif: true });
+  }
+}
+function lancerPlan() {
+  const plan = etatPlan(); const reste = etapesDispo().filter(e => !plan.fait[e]);
+  if (!reste.length) return;
+  const enchaine = () => { const p = etatPlan(); const r = etapesDispo().filter(e => !p.fait[e]); if (r.length) faireEtape(r[0], enchaine); };
+  faireEtape(reste[0], enchaine);
 }
 
 /* ---------- navigation ---------- */
-const VUES = { accueil: vueAccueil, parties: vueParties, ouvertures: vueOuvertures, reglages: vueReglages };
+const VUES = { accueil: vueAccueil, parties: vueParties, entrainer: vueEntrainer, ouvertures: vueOuvertures, reglages: vueReglages };
 function aller(t) {
   S.tab = t; $$('.vue').forEach(e => e.classList.toggle('on', e.id === 'v-' + t));
   $$('nav.tabs button').forEach(b => (b.dataset.t === t ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')));

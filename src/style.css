@@ -221,3 +221,51 @@ nav.tabs button[aria-current=page]{background:var(--teinte);color:var(--accent-f
 .conseils{margin-top:6px}
 .conseils p{padding:12px 14px;border-radius:14px;background:var(--teinte);color:var(--texte);font-size:15px;margin-bottom:8px}
 .coups{margin-top:14px}
+
+/* ---------- stats utiles ---------- */
+.prog-graph svg{display:block;overflow:visible}
+.liste-a{margin:10px -20px 0}
+.ligne-a{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 20px;border-top:1px solid var(--trait)}
+.ligne-a:last-child{border-bottom:1px solid var(--trait)}
+.ligne-a:active{background:var(--brume)}
+.ligne-a .corps{flex:1;min-width:0}
+.ligne-a .adv{font-weight:600}
+.ligne-a .adv span{font-weight:400;color:var(--doux);margin-left:8px;font-size:14px}
+.ligne-a .det{color:var(--doux);font-size:13px}
+.ligne-a .droite{flex:none}
+.ligne-a .delta{font-family:var(--titre);font-weight:600;font-size:14px}
+.ligne-a .delta.neg{color:var(--rose-t)}
+details.plie summary{list-style:none;cursor:pointer;padding:14px 16px;border-radius:14px;background:var(--surface);border:1px solid var(--trait);font-family:var(--titre);font-weight:600;font-size:17px;display:flex;justify-content:space-between;align-items:center}
+details.plie summary::-webkit-details-marker{display:none}
+details.plie summary:after{content:"";width:10px;height:10px;border-right:2px solid var(--doux);border-bottom:2px solid var(--doux);transform:rotate(45deg);margin-right:4px;transition:transform .2s}
+details.plie[open] summary:after{transform:rotate(-135deg)}
+details.plie .bloc{padding:6px 0 0}
+details.plie .bloc h2{display:none}
+
+/* ---------- entraînement ---------- */
+.feuille.entrain{z-index:25}
+.case.sel{box-shadow:inset 0 0 0 3px var(--accent)}
+.case{cursor:pointer}
+.case .pt{position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(106,88,200,.5);pointer-events:none}
+.case .pt.pr{width:88%;height:88%;background:transparent;border:4px solid rgba(106,88,200,.55)}
+.compteur{color:var(--doux);font-size:14px}
+.consigne{font-size:16px;font-weight:500;margin:4px 0 12px}
+.retour{margin-top:14px;padding:12px 14px;border-radius:14px;font-size:15px;color:var(--doux);min-height:20px}
+.retour p{margin-top:4px;color:var(--texte);font-size:14.5px}
+.retour.bon{background:#E3ECFC;color:var(--bleu-t)}
+.retour.mauvais{background:#F7DDEB;color:var(--rose-t)}
+.retour.bon p,.retour.mauvais p{color:var(--texte)}
+.retour:empty{padding:0;min-height:0}
+.actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.plan{margin:0 20px;padding:18px 16px;background:var(--surface);border:1px solid var(--trait);border-radius:22px}
+.plan-t{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+.plan-t h2{font-size:21px}
+.serie{font-size:13px;color:var(--accent-fort);background:var(--teinte);padding:4px 10px;border-radius:99px;font-weight:600;white-space:nowrap}
+.etape{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:13px 0;border-top:1px solid var(--trait)}
+.etape:first-of-type{border-top:0}
+.etape .coche{flex:none;width:28px;height:28px;border-radius:50%;border:2px solid var(--trait);display:grid;place-items:center;font-weight:700;color:#fff}
+.etape.fait .coche{background:var(--accent);border-color:var(--accent)}
+.etape .corps{flex:1;min-width:0}
+.etape .et{font-weight:600}
+.etape .det{color:var(--doux);font-size:13px}
+.etape.fait .et{color:var(--doux);text-decoration:line-through}
