@@ -1,11 +1,13 @@
 /* Analyse des parties : moteur Stockfish (navigateur) et calculs de notation */
 
-export const SEUILS = { i: 5, e: 10, g: 15 }; // points de chances de gagner perdus sur un coup
-export const NIVEAUX = {
-  rapide: { ms: 700, nom: 'Rapide', det: 'environ 1 min par partie' },
-  pousse: { ms: 1800, nom: 'Poussée', det: 'environ 3 min par partie' },
-  max: { ms: 4000, nom: 'Très poussée', det: 'environ 7 min par partie' }
-};
+export const SEUILS = { i: 5, e: 10, g: 15 }; // points de chances de gagner perdus sur un coup (niveau expert)
+
+/* Niveau d'analyse : le moteur regarde aussi loin qu'un joueur de ce niveau (profondeur limitée) et les
+   seuils de faute sont plus tolérants quand le niveau est bas. */
+export const NIV_ELO = [600, 800, 1000, 1200, 1500, 1800, 2000, 2200, 2500];
+const TAB = { 600: { d: 3, k: 1.6 }, 800: { d: 5, k: 1.5 }, 1000: { d: 6, k: 1.35 }, 1200: { d: 8, k: 1.25 }, 1500: { d: 10, k: 1.1 }, 1800: { d: 12, k: 1 }, 2000: { d: 14, k: 1 }, 2200: { d: 16, k: 1 }, 2500: { d: 20, k: 1 } };
+export const paramsElo = e => { const n = TAB[e] ? e : eloProche(e); return { ...TAB[n], cap: TAB[n].d >= 14 ? 1500 : 800, elo: n }; };
+export const eloProche = e => { const x = e || 800; return NIV_ELO.reduce((b, v) => (Math.abs(v - x) < Math.abs(b - x) ? v : b), NIV_ELO[0]); };
 
 export const winPct = e => {
   const c = Math.max(-1000, Math.min(1000, e));
@@ -43,7 +45,7 @@ export class Moteur {
     await new Promise(res => { this.onligne = l => { if (l === 'readyok') { this.onligne = null; res(); } }; this.cmd('ucinewgame'); this.cmd('isready'); });
   }
   stop() { if (this.w) this.cmd('stop'); }
-  evaluer(fen, ms) {
+  evaluer(fen, prm) {
     const trait = fen.split(' ')[1];
     return new Promise(res => {
       let dernier = null;
@@ -67,13 +69,13 @@ export class Moteur {
         }
       };
       this.cmd('position fen ' + fen);
-      this.cmd('go movetime ' + ms);
+      this.cmd(`go depth ${prm.d} movetime ${prm.cap}`);
     });
   }
 }
 
 /* positions : [{fen, fin: null | 'mat' | 'nulle'}] ; renvoie [{e, b, d}] (évaluation du point de vue des blancs, en centipions) */
-export async function evaluerPositions(moteur, positions, ms, progres, annule) {
+export async function evaluerPositions(moteur, positions, prm, progres, annule) {
   await moteur.nouvellePartie();
   const sortie = [];
   const cache = new Map();
@@ -87,7 +89,7 @@ export async function evaluerPositions(moteur, positions, ms, progres, annule) {
       const cle = p.fen.split(' ').slice(0, 4).join(' ');
       let r = cache.get(cle);
       if (!r) {
-        r = await moteur.evaluer(p.fen, i <= 10 ? Math.round(ms * 0.45) : ms);
+        r = await moteur.evaluer(p.fen, prm);
         if (annule()) return null;
         cache.set(cle, r);
       }
@@ -99,7 +101,8 @@ export async function evaluerPositions(moteur, positions, ms, progres, annule) {
 }
 
 /* plies : évaluations des n+1 positions ; moi : 'w' | 'b' ; issue : 'g' | 'p' | 'n' */
-export function calculer(plies, moi, issue) {
+export function calculer(plies, moi, issue, ctx = {}) {
+  const k = ctx.k || 1;
   const W = plies.map(p => winPct(p.e));
   const n = plies.length - 1;
   const coups = [];
@@ -109,7 +112,7 @@ export function calculer(plies, moi, issue) {
   for (let i = 1; i <= n; i++) {
     const mover = i % 2 ? 'w' : 'b';
     const perte = Math.max(0, mover === 'w' ? W[i - 1] - W[i] : W[i] - W[i - 1]);
-    const cls = perte >= SEUILS.g ? 'g' : perte >= SEUILS.e ? 'e' : perte >= SEUILS.i ? 'i' : null;
+    const cls = perte >= SEUILS.g * k ? 'g' : perte >= SEUILS.e * k ? 'e' : perte >= SEUILS.i * k ? 'i' : null;
     if (cls) cnt[mover][cls]++;
     acc[mover].push(precisionCoup(perte));
     coups.push({ i, mover, perte, cls, avant: miens(W[i - 1]), apres: miens(W[i]), delta: miens(W[i]) - miens(W[i - 1]) });
@@ -131,9 +134,24 @@ export function calculer(plies, moi, issue) {
     pt = coups.reduce((b, c) => (b === null || Math.abs(c.delta) > Math.abs(b.delta) ? c : b), null);
   }
   if (pt && Math.abs(pt.delta) < 8) pt = null;
-  return {
-    coups, W,
-    resume: { aw: moy(acc.w), ab: moy(acc.b), cw: cnt.w, cb: cnt.b, pt: pt ? pt.i : null },
-    pt
-  };
+  const resume = { v: 2, nv: ctx.elo || null, aw: moy(acc.w), ab: moy(acc.b), cw: cnt.w, cb: cnt.b, pt: pt ? pt.i : null };
+  if (ctx.ph) {
+    const nouv = () => [0, 0, 0, 0];
+    const st = { ph: { o: nouv(), m: nouv(), f: nouv() }, tm: { a: nouv(), b: nouv(), c: nouv() }, vt: { r: nouv(), n: nouv(), l: nouv() } };
+    const ajoute = (t, cls) => { t[0]++; if (cls === 'g') t[1]++; else if (cls === 'e') t[2]++; else if (cls === 'i') t[3]++; };
+    for (const c of coups) {
+      if (c.mover !== moi) continue;
+      ajoute(st.ph[ctx.ph[c.i]], c.cls);
+      const rem = ctx.rem ? ctx.rem[c.i] : null;
+      if (ctx.base && rem != null) {
+        const fr = rem / ctx.base;
+        ajoute(st.tm[fr > 0.5 ? 'a' : fr > 0.2 ? 'b' : 'c'], c.cls);
+        const sp = ctx.spent[c.i];
+        if (sp != null) ajoute(st.vt[sp < 3 ? 'r' : sp <= 15 ? 'n' : 'l'], c.cls);
+      }
+    }
+    resume.st = st;
+    if (pt) { resume.ptp = ctx.ph[pt.i]; resume.ptm = pt.mover === moi; resume.ptd = pt.delta < 0 ? 'p' : 'g'; }
+  }
+  return { coups, W, resume, pt };
 }

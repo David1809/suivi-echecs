@@ -214,3 +214,10 @@ nav.tabs button[aria-current=page]{background:var(--teinte);color:var(--accent-f
 .legende-fl span:before{content:"";display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .legende-fl .bleu:before{background:#3F78E0}.legende-fl .rose:before{background:#E58EC0}
 .courbe-ana .cur{stroke:#6A58C8;stroke-opacity:.55;stroke-dasharray:3 3}
+
+.sel{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23646A8F' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:18px;padding-right:42px;margin-bottom:12px}
+.lib{display:block;font-size:13px;color:var(--doux);margin:2px 0 6px}
+.sous-titre{font-size:17px;margin:26px 0 4px}
+.conseils{margin-top:6px}
+.conseils p{padding:12px 14px;border-radius:14px;background:var(--teinte);color:var(--texte);font-size:15px;margin-bottom:8px}
+.coups{margin-top:14px}

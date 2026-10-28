@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js';
-import { Moteur, NIVEAUX, evaluerPositions, calculer, formatEval } from './analyse.js';
+import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval } from './analyse.js';
 
 const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzeXJyY3Jrbnhka2RzeGtvb29hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyODQyMzMsImV4cCI6MjEwNjg2MDIzM30.4ks8YNW4oYoPbSOiBT4Y9UCotErus8aydDaQUDm7crs';
@@ -260,10 +260,73 @@ function vueAccueil() {
     }
   }
   v.append(bilan);
+  v.append(blocErreurs(per));
   const rec = h('section', { class: 'bloc', style: 'padding-left:0;padding-right:0' }, h('h2', { style: 'padding:0 20px' }, 'Dernières parties'));
   per.slice(-6).reverse().forEach(g => rec.append(ligPartie(g)));
   rec.append(h('button', { class: 'plus', onclick: () => aller('parties') }, 'Voir toutes les parties'));
   if (per.length) v.append(rec);
+}
+
+
+/* ---------- statistiques d'erreurs (issues de l'analyse) ---------- */
+const z4 = () => [0, 0, 0, 0];
+function agreger(per) {
+  const A = { n: 0, ph: { o: z4(), m: z4(), f: z4() }, tm: { a: z4(), b: z4(), c: z4() }, vt: { r: z4(), n: z4(), l: z4() }, ptPerdu: { o: 0, m: 0, f: 0 }, nPerdu: 0, prec: [] };
+  const add = (a, b) => { for (let i = 0; i < 4; i++) a[i] += b[i]; };
+  for (const g of per) {
+    const r = S.ana[g.u]; if (!r || !r.st) continue;
+    A.n++;
+    for (const k of Object.keys(A.ph)) add(A.ph[k], r.st.ph[k]);
+    for (const k of Object.keys(A.tm)) add(A.tm[k], r.st.tm[k]);
+    for (const k of Object.keys(A.vt)) add(A.vt[k], r.st.vt[k]);
+    const acc = g.co === 'blancs' ? r.aw : r.ab; if (acc != null) A.prec.push(acc);
+    if (g.issue === 'p') { A.nPerdu++; if (r.ptp && r.ptm && r.ptd === 'p') A.ptPerdu[r.ptp]++; }
+  }
+  return A;
+}
+const taux = t => (t[0] >= 15 ? ((t[1] + t[2]) / t[0]) * 100 : null); // gaffes et erreurs pour 100 coups
+const fmtTaux = x => (x == null ? '—' : x.toFixed(1).replace('.', ','));
+
+function blocErreurs(per) {
+  const A = agreger(per);
+  const sec = h('section', { class: 'bloc' }, h('h2', {}, 'Tes erreurs', h('small', {}, `${A.n} parties analysées`)));
+  if (!A.n) {
+    sec.append(h('p', { class: 'ana-msg' }, 'Les statistiques apparaissent dès que des parties sont analysées. L’analyse automatique s’en charge quand l’appli est ouverte, ou ouvre une partie et touche « Analyser ».'));
+    return sec;
+  }
+  if (A.n < per.length * 0.5) sec.append(h('p', { class: 'ana-msg' }, `Seulement ${A.n} parties sur ${per.length} sont analysées sur cette période. Augmente le nombre de parties analysées dans Réglages pour des chiffres plus fiables.`));
+  const bloc = (titre, lignes, note) => {
+    const L = h('div', { class: 'lignes' });
+    const maxi = Math.max(1, ...lignes.map(l => l[2] || 0));
+    lignes.forEach(([nom, sous, t]) => L.append(ligneKV(nom, sous, fmtTaux(t), t == null ? 0 : (100 * t) / maxi)));
+    sec.append(h('h3', { class: 'sous-titre' }, titre), L);
+    if (note) sec.append(h('p', { class: 'ana-msg', style: 'margin-top:8px' }, note));
+  };
+  const rows = (def, T) => def.map(([k, nom, sous]) => [nom, `${sous ? sous + ', ' : ''}${T[k][0]} coups`, taux(T[k])]);
+  const withRate = r => r.map(([n, sbs, t]) => [n, sbs, t]);
+  bloc('Où tu fais des fautes', withRate(rows([['o', 'Ouverture', ''], ['m', 'Milieu de jeu', ''], ['f', 'Finale', '']], A.ph)), 'Gaffes et erreurs pour 100 coups joués.');
+  if (A.tm.a[0] + A.tm.b[0] + A.tm.c[0] > 0) bloc('Selon le temps qu’il te reste', withRate(rows([['a', 'Plus de la moitié du temps', ''], ['b', 'Entre 20 % et 50 %', ''], ['c', 'Moins de 20 %', '']], A.tm)));
+  if (A.vt.r[0] + A.vt.n[0] + A.vt.l[0] > 0) bloc('Selon le temps passé sur le coup', withRate(rows([['r', 'Coup rapide', 'moins de 3 s'], ['n', 'Coup normal', '3 à 15 s'], ['l', 'Coup réfléchi', 'plus de 15 s']], A.vt)));
+  if (A.nPerdu >= 3) {
+    const tot = A.ptPerdu.o + A.ptPerdu.m + A.ptPerdu.f || 1;
+    const L = h('div', { class: 'lignes' });
+    [['o', 'Ouverture'], ['m', 'Milieu de jeu'], ['f', 'Finale']].forEach(([k, nom]) => L.append(ligneKV(nom, null, `${A.ptPerdu[k]}`, (100 * A.ptPerdu[k]) / tot)));
+    sec.append(h('h3', { class: 'sous-titre' }, 'Quand tu perds, où la partie bascule'), L);
+  }
+  // constats en clair
+  const nomPh = { o: 'l’ouverture', m: 'le milieu de jeu', f: 'la finale' };
+  const phs = Object.keys(A.ph).filter(k => taux(A.ph[k]) != null).sort((a, b) => taux(A.ph[b]) - taux(A.ph[a]));
+  const conseils = [];
+  if (phs.length >= 2 && taux(A.ph[phs[0]]) >= 1.3 * (taux(A.ph[phs[phs.length - 1]]) || 0.1)) conseils.push(`C’est dans ${nomPh[phs[0]]} que tu fais le plus de fautes graves : ${fmtTaux(taux(A.ph[phs[0]]))} pour 100 coups, contre ${fmtTaux(taux(A.ph[phs[phs.length - 1]]))} dans ${nomPh[phs[phs.length - 1]]}.`);
+  const ta = taux(A.tm.a), tc = taux(A.tm.c);
+  if (ta != null && tc != null && tc >= 1.4 * Math.max(ta, 0.1)) conseils.push(`Quand il te reste moins de 20 % du temps, tu fais environ ${(tc / Math.max(ta, 0.1)).toFixed(1).replace('.', ',')} fois plus de fautes graves qu’avec plus de la moitié.`);
+  const vr = taux(A.vt.r), autres = [A.vt.n, A.vt.l].reduce((s, t) => [s[0] + t[0], s[1] + t[1], s[2] + t[2], s[3] + t[3]], z4());
+  const va = taux(autres);
+  if (vr != null && va != null && vr >= 1.4 * Math.max(va, 0.1)) conseils.push(`Tes coups joués en moins de 3 secondes contiennent environ ${(vr / Math.max(va, 0.1)).toFixed(1).replace('.', ',')} fois plus de fautes graves que les autres : prends quelques secondes de plus.`);
+  if (A.nPerdu >= 3) { const k = ['o', 'm', 'f'].sort((a, b) => A.ptPerdu[b] - A.ptPerdu[a])[0]; if (A.ptPerdu[k] >= 2) conseils.push(`Quand tu perds, la partie bascule le plus souvent dans ${nomPh[k]} (${A.ptPerdu[k]} fois sur ${A.nPerdu} défaites).`); }
+  if (A.prec.length) conseils.push(`Ta précision moyenne sur les parties analysées est de ${Math.round(A.prec.reduce((x, y) => x + y, 0) / A.prec.length)} %.`);
+  if (conseils.length) sec.append(h('h3', { class: 'sous-titre' }, 'Ce que ça dit'), h('div', { class: 'conseils' }, conseils.map(t => h('p', {}, t))));
+  return sec;
 }
 
 function detLigne(g) {
@@ -353,9 +416,13 @@ function vueReglages() {
   const btn = h('button', { class: 'btn', onclick: () => synchroniser(btn, etat) }, 'Synchroniser maintenant');
   if (S.syncEnCours) { btn.disabled = true; btn.textContent = 'Synchronisation en cours'; }
   v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Mettre à jour mes parties'), h('p', {}, 'Une mise à jour automatique a lieu chaque nuit. Utilise ce bouton pour récupérer tes dernières parties tout de suite (compte environ une minute).'), btn, etat));
-  const niv = h('div', { class: 'filtres', style: 'padding:0 0 10px' }, ...Object.entries(NIVEAUX).map(([k, nv]) => h('button', { 'aria-pressed': S.prof === k, onclick: () => { S.prof = k; store.set('ec_prof', k); vueReglages(); } }, nv.nom)));
+  const selNiv = h('select', { class: 'champ sel', 'aria-label': 'Niveau d’analyse par défaut', onchange: () => { S.niveau = selNiv.value === 'auto' ? null : +selNiv.value; store.set('ec_niv', S.niveau); vueReglages(); } },
+    h('option', { value: 'auto', selected: !S.niveau }, 'Mon niveau (automatique)'), NIV_ELO.map(e => h('option', { value: e, selected: S.niveau === e }, `${e} elo`)));
+  const selNb = h('select', { class: 'champ sel', 'aria-label': 'Parties à analyser automatiquement', onchange: () => { S.nAuto = +selNb.value; store.set('ec_nauto', S.nAuto); autoAnalyse(); majStatut(); } },
+    [30, 100, 300, 1000].map(n => h('option', { value: n, selected: S.nAuto === n }, `Mes ${n} dernières parties`)));
   v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Analyse des parties'),
-    h('p', {}, `Niveau ${NIVEAUX[S.prof].nom.toLowerCase()} : ${NIVEAUX[S.prof].det}. Plus le niveau est élevé, plus l’analyse est fiable et longue.`), niv,
+    h('p', {}, 'Niveau d’analyse : le moteur regarde aussi loin qu’un joueur de ce niveau. Par défaut, c’est ton classement du moment, parce qu’une analyse de niveau 2500 ne t’aiderait pas.'), selNiv,
+    h('p', { style: 'margin-top:4px' }, 'Parties analysées automatiquement :'), selNb,
     h('p', { class: 'statut-auto' }),
     h('button', { class: 'btn discret', onclick: () => { S.auto = !S.auto; store.set('ec_auto', S.auto); if (S.auto) autoAnalyse(); vueReglages(); } }, S.auto ? 'Désactiver l’analyse automatique' : 'Activer l’analyse automatique'),
     h('p', { style: 'margin:12px 0 0' }, 'L’analyse tourne dans ton téléphone : elle peut le faire chauffer et consommer de la batterie. Elle n’avance que lorsque l’appli est ouverte.')));
@@ -414,7 +481,8 @@ let verrou = Promise.resolve();
 const exclusif = fn => { const p = verrou.then(fn, fn); verrou = p.catch(() => {}); return p; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 S.ana = store.get('ec_ana', {});
-S.prof = store.get('ec_prof', 'pousse');
+S.niveau = store.get('ec_niv', null);
+S.nAuto = store.get('ec_nauto', 30);
 S.auto = store.get('ec_auto', true);
 S.manuel = 0; S.autoErr = {}; S.autoEtat = null;
 
@@ -434,20 +502,43 @@ const sanDe = (fen, uci) => {
   try { const c = new Chess(fen); return c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] }).san; } catch { return uci; }
 };
 
-async function analyserPartie(g, pgn, progres, annule) {
-  const { pos } = positionsDe(pgn);
-  const ms = NIVEAUX[S.prof].ms;
-  const ev = await exclusif(() => evaluerPositions(getMoteur(), pos, ms, progres, annule));
+const niveauDe = g => S.niveau || eloProche(g.e);
+function materielNonPion(fen) {
+  let t = 0; const v = { q: 9, r: 5, b: 3, n: 3 };
+  for (const ch of fen.split(' ')[0].toLowerCase()) if (v[ch]) t += v[ch];
+  return t;
+}
+function contexteDe(pgn, pos, coups, nv) {
+  const m = /\[TimeControl "([^"]+)"\]/.exec(pgn); const tc = m ? m[1] : '';
+  let base = null, inc = 0;
+  if (/^\d+(\+\d+)?$/.test(tc)) { const [b, i] = tc.split('+'); base = +b; inc = +(i || 0); }
+  const clk = [...pgn.matchAll(/\[%clk (\d+):(\d+):(\d+(?:\.\d+)?)\]/g)].map(x => +x[1] * 3600 + +x[2] * 60 + +x[3]);
+  const ok = base && clk.length === coups.length;
+  const ph = [null], rem = [null], spent = [null];
+  for (let i = 1; i <= coups.length; i++) {
+    ph[i] = i <= 20 ? 'o' : materielNonPion(pos[i - 1].fen) <= 22 ? 'f' : 'm';
+    rem[i] = ok ? clk[i - 1] : null;
+    spent[i] = ok ? Math.max(0, (i > 2 ? clk[i - 3] : base) + inc - clk[i - 1]) : null;
+  }
+  const prm = paramsElo(nv);
+  return { k: prm.k, elo: prm.elo, ph, rem, spent, base: ok ? base : null };
+}
+
+async function analyserPartie(g, pgn, progres, annule, nv = niveauDe(g)) {
+  const { coups, pos } = positionsDe(pgn);
+  const prm = paramsElo(nv);
+  const ctx = contexteDe(pgn, pos, coups, nv);
+  const ev = await exclusif(() => evaluerPositions(getMoteur(), pos, prm, progres, annule));
   if (!ev) return null;
-  const calc = calculer(ev, g.co === 'blancs' ? 'w' : 'b', g.issue);
+  const calc = calculer(ev, g.co === 'blancs' ? 'w' : 'b', g.issue, ctx);
   const plies = ev.map(x => ({ e: x.e, b: x.b }));
-  try { await rpc('echecs_analyse_ecrire', { p_code: S.code, p_url: g.u, p_moteur: 'stockfish-19-lite-single', p_temps_ms: ms, p_plies: plies, p_resume: calc.resume }); } catch {}
+  try { await rpc('echecs_analyse_ecrire', { p_code: S.code, p_url: g.u, p_moteur: 'stockfish-19-lite-single', p_temps_ms: prm.d, p_plies: plies, p_resume: calc.resume }); } catch {}
   S.ana[g.u] = calc.resume; store.set('ec_ana', S.ana); majBadge(g.u);
-  return { plies, calc };
+  return { plies, calc, nv: prm.elo };
 }
 
 /* analyse automatique des dernières parties */
-const recentes = () => PARTIES.filter(g => g.r === 'chess').slice(-30);
+const recentes = () => PARTIES.filter(g => g.r === 'chess').slice(-S.nAuto);
 function prochaineAuto() { return recentes().slice().reverse().find(g => !S.ana[g.u] && !S.autoErr[g.u]); }
 function majStatut() {
   const total = recentes().length, faites = recentes().filter(g => S.ana[g.u]).length;
@@ -496,7 +587,7 @@ async function ouvrirPartie(g) {
   let i = coups.length, bas = moi, lecture = null, fleches = false;
   let ana = null; // { plies, calc }
   let etat = 'inconnu'; // inconnu | aucune | calcul | prete
-  let annuleManuel = false, wake = null;
+  let annuleManuel = false, wake = null, nvSel = niveauDe(g);
 
   const plateau = h('div', { class: 'plateau', role: 'img', 'aria-label': 'Échiquier' });
   const svgFl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -654,8 +745,11 @@ async function ouvrirPartie(g) {
     panneau.innerHTML = '';
     if (etat === 'inconnu') { panneau.append(h('div', { class: 'ana-msg' }, 'Recherche d’une analyse existante…')); return; }
     if (etat === 'aucune') {
-      const nv = NIVEAUX[S.prof];
-      panneau.append(h('h3', {}, 'Analyse de la partie'), h('p', { class: 'ana-msg' }, `Stockfish passe chaque position en revue pour repérer les gaffes et le moment où la partie bascule. Niveau ${nv.nom.toLowerCase()} (${nv.det}). Garde l’appli ouverte pendant l’analyse.`),
+      const sel = h('select', { class: 'champ sel', 'aria-label': 'Niveau d’analyse', onchange: () => { nvSel = +sel.value; rendrePanneau(); } },
+        NIV_ELO.map(e => h('option', { value: e, selected: e === nvSel }, `${e} elo` + (e === eloProche(g.e) ? ' (ton niveau)' : ''))));
+      panneau.append(h('h3', {}, 'Analyse de la partie'),
+        h('p', { class: 'ana-msg' }, 'Stockfish repère les gaffes et le moment où la partie bascule. Il regarde aussi loin qu’un joueur du niveau choisi : les fautes que seul un joueur bien plus fort aurait vues ne sont pas comptées.'),
+        h('label', { class: 'lib' }, 'Niveau d’analyse'), sel,
         h('button', { class: 'btn', onclick: lancer }, 'Analyser cette partie'));
       return;
     }
@@ -665,7 +759,7 @@ async function ouvrirPartie(g) {
     const cv = h('div', { class: 'courbe-ana', 'aria-label': 'Courbe d’évaluation de la partie' });
     const dec = h('div', { class: 'decisif' }, h('h3', {}, t.titre), h('p', {}, t.corps),
       ana.calc.pt && h('button', { class: 'btn', onclick: () => { fleches = true; aller_(ana.calc.pt.i - 1); f.scrollTo({ top: 0, behavior: 'smooth' }); } }, 'Voir ce moment'));
-    panneau.append(dec, h('h3', { style: 'margin-top:22px' }, 'Évolution de la partie'), cv, ligneStats('Toi', am, cm), ligneStats(g.adv, aa, ca),
+    panneau.append(dec, h('h3', { style: 'margin-top:22px' }, 'Évolution de la partie'), cv, h('p', { class: 'ana-msg', style: 'margin:10px 0 0' }, `Analyse au niveau ${ana.nv} elo.`), ligneStats('Toi', am, cm), ligneStats(g.adv, aa, ca),
       h('button', { class: 'btn discret', style: 'margin-top:14px', onclick: () => { etat = 'aucune'; rendrePanneau(); } }, 'Refaire l’analyse'));
     requestAnimationFrame(() => dessinerCourbe(cv));
   }
@@ -680,7 +774,7 @@ async function ouvrirPartie(g) {
         bar.style.width = (100 * k) / n + '%';
         const reste = Math.max(0, Math.round(((Date.now() - t0) / k) * (n - k) / 1000));
         tx.textContent = `Position ${k} sur ${n}` + (k > 3 ? `, il reste environ ${reste >= 60 ? Math.round(reste / 60) + ' min' : reste + ' s'}` : '');
-      }, () => annuleManuel);
+      }, () => annuleManuel, nvSel);
       if (r) { ana = r; etat = 'prete'; listeCoups(); } else etat = 'aucune';
     } catch (e) {
       etat = 'aucune'; rendrePanneau();
@@ -709,7 +803,7 @@ async function ouvrirPartie(g) {
   // analyse déjà enregistrée ?
   try {
     const r = await rpc('echecs_analyse_lire', { p_code: S.code, p_url: g.u });
-    if (r && r.plies && r.plies.length === pos.length) { ana = { plies: r.plies, calc: calculer(r.plies, moi, g.issue) }; etat = 'prete'; S.ana[g.u] = ana.calc.resume; store.set('ec_ana', S.ana); majBadge(g.u); listeCoups(); }
+    if (r && r.plies && r.plies.length === pos.length) { const nv0 = (r.resume && r.resume.nv) || eloProche(g.e); const c0 = calculer(r.plies, moi, g.issue, { k: paramsElo(nv0).k }); if (r.resume) c0.resume = r.resume; ana = { plies: r.plies, calc: c0, nv: nv0 }; nvSel = nv0; etat = 'prete'; S.ana[g.u] = ana.calc.resume; store.set('ec_ana', S.ana); majBadge(g.u); listeCoups(); }
     else etat = 'aucune';
   } catch { etat = 'aucune'; }
   if (etat !== 'calcul') { rendrePanneau(); dessiner(); }
