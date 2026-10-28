@@ -379,7 +379,7 @@ function blocProgression(per) {
 function blocTypes(per) {
   const A = analysees(per).filter(g => S.ana[g.u].ty);
   const sec = sectionNue('Quel type de fautes', A.length ? `${A.length} parties analysées` : '');
-  if (!A.length) { sec.append(h('p', { class: 'ana-msg' }, 'Les types de fautes apparaissent dès que des parties sont analysées.')); return sec; }
+  if (!A.length) { sec.append(h('p', { class: 'ana-msg' }, analysees(per).length ? 'Tes analyses précédentes sont en cours de mise à jour. Garde l’appli ouverte quelques minutes, puis reviens ici.' : 'Les types de fautes apparaissent dès que des parties sont analysées.')); return sec; }
   const T = { mat: 0, capt: 0, prise: 0, menace: 0, autre: 0 };
   for (const g of A) for (const k of Object.keys(T)) T[k] += S.ana[g.u].ty[k] || 0;
   const tot = Object.values(T).reduce((x, y) => x + y, 0);
@@ -397,7 +397,7 @@ function blocGaches(per) {
   const A = analysees(per).filter(g => S.ana[g.u].mx != null);
   const sec = sectionNue('Avantages gâchés');
   const gagnantes = A.filter(g => S.ana[g.u].mx >= 80);
-  if (A.length < 5) { sec.append(h('p', { class: 'ana-msg' }, 'Cette section apparaît quand au moins 5 parties sont analysées.')); return sec; }
+  if (A.length < 5) { sec.append(h('p', { class: 'ana-msg' }, analysees(per).length >= 5 ? 'Tes analyses précédentes sont en cours de mise à jour. Garde l’appli ouverte quelques minutes, puis reviens ici.' : 'Cette section apparaît quand au moins 5 parties sont analysées.')); return sec; }
   const gagnees = gagnantes.filter(g => g.issue === 'g').length, gachees = gagnantes.filter(g => g.issue !== 'g');
   sec.append(h('p', { class: 'ana-msg' }, gagnantes.length ? `Dans ${gagnantes.length} parties, tu as eu au moins 80 % de chances de gagner. Tu en as gagné ${gagnees} (${pct(gagnees, gagnantes.length)} %).` : 'Aucune partie avec une position clairement gagnante sur cette période.'));
   if (gachees.length) {
@@ -415,7 +415,7 @@ function blocGaches(per) {
 function blocAbandons(per) {
   const A = analysees(per).filter(g => S.ana[g.u].rs != null);
   const sec = sectionNue('Abandons');
-  if (A.length < 5) { sec.append(h('p', { class: 'ana-msg' }, 'Cette section apparaît quand au moins 5 parties sont analysées.')); return sec; }
+  if (A.length < 5) { sec.append(h('p', { class: 'ana-msg' }, analysees(per).length >= 5 ? 'Tes analyses précédentes sont en cours de mise à jour. Garde l’appli ouverte quelques minutes, puis reviens ici.' : 'Cette section apparaît quand au moins 5 parties sont analysées.')); return sec; }
   const ab = A.filter(g => S.ana[g.u].rs === 1 && g.issue === 'p');
   const tot = ab.length;
   const tot_ = A.length;
@@ -571,7 +571,7 @@ async function synchroniser(btn, etat) {
       const e = await rpc('echecs_sync_etat', { p_code: S.code });
       if (e.en_attente === 0) break;
     }
-    await charger(false); rendre(); autoAnalyse();
+    await charger(false); rendre(); migrerRapide(); autoAnalyse();
     const nb = PARTIES.length - avant; toast(nb > 0 ? `${nb} nouvelle${nb > 1 ? 's' : ''} partie${nb > 1 ? 's' : ''} récupérée${nb > 1 ? 's' : ''}` : 'Tout est à jour');
   } catch (e) { toast(e.message || 'La synchronisation a échoué'); }
   S.syncEnCours = false; if (S.tab === 'reglages') vueReglages();
@@ -698,20 +698,53 @@ async function analyserPartie(g, pgn, progres, annule, nv = niveauDe(g)) {
   const plies = ev.map(x => ({ e: x.e, b: x.b }));
   enrichir(g, calc, plies, pos, coups, moi);
   let exos = [];
-  try { exos = await exercicesDe(g, calc, plies, pos, coups, moi, annule); } catch {}
+  try { exos = await exercicesDe(g, calc, plies, pos, coups, moi, annule); calc.resume.ex = 1; } catch {}
   if (annule()) return null;
   try { await rpc('echecs_analyse_enregistrer', { p_code: S.code, p_url: g.u, p_moteur: 'stockfish-19-lite-single', p_temps_ms: prm.d, p_plies: plies, p_resume: calc.resume, p_exos: exos }); } catch {}
   S.ana[g.u] = calc.resume; store.set('ec_ana', S.ana); majBadge(g.u);
   return { plies, calc, nv: prm.elo };
 }
 
+
+/* mise à jour des analyses faites avec une version précédente : on réutilise les évaluations enregistrées */
+async function completer(g, avecExos, annule) {
+  const [r, pgn] = await Promise.all([rpc('echecs_analyse_lire', { p_code: S.code, p_url: g.u }), rpc('echecs_partie', { p_code: S.code, p_url: g.u })]);
+  if (!r || !r.plies) return false;
+  const { coups, pos } = positionsDe(pgn);
+  if (pos.length !== r.plies.length) return false;
+  const nv = (r.resume && r.resume.nv) || eloProche(g.e), moi = g.co === 'blancs' ? 'w' : 'b';
+  const calc = calculer(r.plies, moi, g.issue, contexteDe(pgn, pos, coups, nv));
+  enrichir(g, calc, r.plies, pos, coups, moi);
+  let exos = [];
+  if (avecExos) { exos = await exercicesDe(g, calc, r.plies, pos, coups, moi, annule); if (annule()) return false; calc.resume.ex = 1; }
+  else if (r.resume && r.resume.ex) calc.resume.ex = r.resume.ex;
+  await rpc('echecs_analyse_enregistrer', { p_code: S.code, p_url: g.u, p_moteur: r.moteur || 'stockfish-19-lite-single', p_temps_ms: r.temps_ms || 0, p_plies: r.plies, p_resume: calc.resume, p_exos: exos });
+  S.ana[g.u] = calc.resume; store.set('ec_ana', S.ana); majBadge(g.u);
+  return true;
+}
+S.migr = null;
+async function migrerRapide() {
+  if (S.migrRun || !S.code) return;
+  const a = PARTIES.filter(g => g.r === 'chess' && S.ana[g.u] && S.ana[g.u].st && !S.ana[g.u].ty && !S.autoErr[g.u]);
+  if (!a.length) return;
+  S.migrRun = true; S.migr = { i: 0, n: a.length }; majStatut();
+  try {
+    for (const g of a) {
+      if (!S.code) break;
+      try { if (!(await completer(g, false, () => false))) S.autoErr[g.u] = 1; } catch { S.autoErr[g.u] = 1; }
+      S.migr.i++; if (S.migr.i % 4 === 0) majStatut();
+    }
+  } finally { S.migrRun = false; S.migr = null; majStatut(); if (S.tab === 'accueil') rendre(); autoAnalyse(); }
+}
+
 /* analyse automatique des dernières parties */
 const recentes = () => PARTIES.filter(g => g.r === 'chess').slice(-S.nAuto);
-function prochaineAuto() { return recentes().slice().reverse().find(g => !S.ana[g.u] && !S.autoErr[g.u]); }
+function prochaineAuto() { return recentes().slice().reverse().find(g => (!S.ana[g.u] || (S.ana[g.u].ty && !S.ana[g.u].ex)) && !S.autoErr[g.u]); }
 function majStatut() {
   const total = recentes().length, faites = recentes().filter(g => S.ana[g.u]).length;
   let t;
-  if (!S.auto) t = `Analyse automatique désactivée. ${faites} sur ${total} parties récentes analysées.`;
+  if (S.migr) t = `Mise à jour de tes analyses précédentes : ${S.migr.i} sur ${S.migr.n}. Garde l’appli ouverte.`;
+  else if (!S.auto) t = `Analyse automatique désactivée. ${faites} sur ${total} parties récentes analysées.`;
   else if (S.autoEtat && S.autoEtat.n) t = `Analyse en cours : position ${S.autoEtat.i} sur ${S.autoEtat.n}. ${faites} sur ${total} parties récentes analysées.`;
   else if (faites >= total) t = `Tes ${total} dernières parties sont analysées.`;
   else t = `${faites} sur ${total} parties récentes analysées. L’analyse reprend quand l’appli est ouverte.`;
@@ -725,8 +758,14 @@ async function autoAnalyse() {
       if (document.hidden) { await new Promise(r => document.addEventListener('visibilitychange', r, { once: true })); continue; }
       if (S.manuel > 0) { await sleep(2000); continue; }
       const g = prochaineAuto(); if (!g) break;
+      if (S.migrRun) { await sleep(1000); continue; }
       S.autoEtat = { u: g.u, i: 0, n: 0 }; majStatut();
       try {
+        if (S.ana[g.u]) {
+          const ok = await completer(g, true, () => !S.auto || S.manuel > 0 || !S.code);
+          if (!ok && S.auto && S.manuel === 0) S.autoErr[g.u] = 1;
+          continue;
+        }
         const pgn = await rpc('echecs_partie', { p_code: S.code, p_url: g.u });
         await analyserPartie(g, pgn, (i, n) => { S.autoEtat.i = i; S.autoEtat.n = n; if (i % 4 === 0) majStatut(); }, () => !S.auto || S.manuel > 0 || !S.code);
         if (!S.ana[g.u] && S.auto && S.manuel === 0) S.autoErr[g.u] = 1;
@@ -1301,6 +1340,6 @@ async function init() {
   addEventListener('resize', () => { if (S.tab === 'accueil') { clearTimeout(init.rt); init.rt = setTimeout(() => { const c = $('.courbe'); if (c) { c.dataset.anime = '1'; rendre(); } }, 150); } });
   if (!S.code) { afficherAcces(); return; }
   demarrer();
-  if (await charger(true)) { rendre(); autoAnalyse(); }
+  if (await charger(true)) { rendre(); migrerRapide(); autoAnalyse(); }
 }
 init();

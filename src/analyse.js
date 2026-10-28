@@ -45,7 +45,8 @@ export class Moteur {
     await new Promise(res => { this.onligne = l => { if (l === 'readyok') { this.onligne = null; res(); } }; this.cmd('ucinewgame'); this.cmd('isready'); });
   }
   stop() { if (this.w) this.cmd('stop'); }
-  evaluer(fen, prm) {
+  async evaluer(fen, prm) {
+    await this.init();
     const trait = fen.split(' ')[1];
     return new Promise(res => {
       let dernier = null;
