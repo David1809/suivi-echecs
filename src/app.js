@@ -2,6 +2,7 @@ import { Chess } from 'chess.js';
 import { SPRITE } from './pieces.js';
 import { expliquerCoup, pourquoiMeilleur } from './expliquer.js';
 import { COURS } from './ouvertures-data.js';
+import { analyserOuverture, prefDe, aPref, libelle, sansDe } from './ouv-perso.js';
 import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval, winPct } from './analyse.js';
 
 const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
@@ -489,14 +490,28 @@ function vueParties() {
 }
 
 /* ---------- ouvertures : cours ---------- */
-const partiesDuCours = c => PARTIES.filter(g => g.co === c.co && c.re.test(g.o || ''));
+S.mv = store.get('ec_mv', { n: 0, d: {} });
+async function chargerMv() {
+  if (S.mvEnCours || S.mvEchec || !S.code) return false;
+  S.mvEnCours = true;
+  try { const r = await rpc('echecs_coups_ouverture', { p_code: S.code }); const d = {}; for (const x of r) d[x.u] = x.m; S.mv = { n: PARTIES.length, d }; store.set('ec_mv', S.mv); return true; }
+  catch { S.mvEchec = true; return false; } finally { S.mvEnCours = false; }
+}
+/* une partie appartient à un cours si ses premiers coups sont ceux du cours (les coups viennent de ta base) */
+const partiesDuCours = c => { const pref = prefDe(c); return PARTIES.filter(g => g.co === c.co && (S.mv.d[g.u] ? aPref(S.mv.d[g.u], pref) : (!S.mv.n && c.re.test(g.o || '')))); };
+const persoDe = (c, ps) => analyserOuverture(c, ps || partiesDuCours(c), S.mv.d, S.ana);
+const texteNote = n => (n && typeof n === 'object' ? n.t : n) || '';
 const progCours = () => store.get('ec_cours_prog', {});
 function sauverProg(id, idx, erreurs) { const p = progCours(); p[id + '|' + idx] = { e: erreurs, d: dateLocale() }; store.set('ec_cours_prog', p); }
 
 function vueOuvertures() {
   const v = $('#v-ouvertures'); v.innerHTML = '';
   v.append(h('div', { class: 'entete' }, h('h1', {}, 'Ouvertures')));
-  v.append(h('p', { class: 'intro-ouv' }, 'Les ouvertures que tu joues le plus. Touche-en une pour comprendre son idée, rejouer ses coups clés avec leurs explications, et t’entraîner.'));
+  v.append(h('p', { class: 'intro-ouv' }, 'Les ouvertures que tu joues le plus. Touche-en une pour comprendre son idée, rejouer ses coups clés avec leurs explications, voir ce que tes propres parties montrent, et t’entraîner.'));
+  if (S.mv.n !== PARTIES.length && !S.mvEchec) {
+    v.append(h('p', { class: 'ana-msg', style: 'margin:0 20px 12px' }, 'Lecture des coups de tes parties…'));
+    chargerMv().then(ok => { if (S.tab === 'ouvertures' && !$('#feuille').classList.contains('on')) vueOuvertures(); });
+  }
   const L = COURS.map(c => { const ps = partiesDuCours(c), s = stats(ps); return { c, ps, s }; }).sort((a, b) => b.s.n - a.s.n);
   const liste = h('div', { class: 'cours-liste' });
   L.forEach(({ c, s }) => {
@@ -551,12 +566,120 @@ function positionsLigne(coupsSan) {
 }
 const numCoup = ply => `${Math.ceil(ply / 2)}${ply % 2 ? '.' : '…'}`;
 
-function ouvrirCours(cours, idx0 = 0) {
+/* ----- ouvertures : fiche personnalisée construite sur tes parties ----- */
+function blocPlans(plans) {
+  if (!plans || !plans.length) return null;
+  const ligne = (k, t) => t ? h('p', {}, h('b', {}, k + ' : '), t) : null;
+  return h('div', { class: 'bloc-cours' }, h('h3', {}, 'Les plans de jeu'),
+    ...plans.map(pl => typeof pl === 'string' ? h('p', { class: 'plan-simple' }, pl)
+      : h('div', { class: 'plan-ob' }, h('h4', {}, pl.t), ligne('Objectif', pl.obj), ligne('Coups utilisés', pl.coups), ligne('Pourquoi', pl.pq), ligne('Quand ça marche', pl.cond), ligne('À éviter', pl.ev))));
+}
+function carteExemple(ex, cours, ov) {
+  const m = (S.mv.d[ex.g.u] || '').split(' '), moi = cours.co === 'blancs' ? 'w' : 'b';
+  const avant = ex.apres ? ex.ply : ex.ply - 1, ch = new Chess(); let dernier = null;
+  for (let k = 0; k < avant; k++) { try { dernier = ch.move(m[k]); } catch { break; } }
+  const fen = ch.fen(), plateau = h('div', { class: 'plateau', role: 'img', 'aria-label': 'Position de ta partie' });
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 8 8'); svg.setAttribute('class', 'fleches');
+  construirePlateau(plateau, fen, moi, { dernier });
+  let legende = null;
+  if (!ex.apres && ex.san) {
+    try {
+      let fl = ''; const mj = new Chess(fen).move(ex.san); fl += flecheSvg(mj.from + mj.to, C('--fl-joue'), moi);
+      if (ex.best) { const mb = new Chess(fen).move(ex.best); fl += flecheSvg(mb.from + mb.to, C('--fl-mieux'), moi); }
+      svg.innerHTML = fl;
+      legende = h('div', { class: 'legende-fl' }, h('span', { class: 'rose' }, `Ton coup : ${ex.san}`), ex.best && h('span', { class: 'bleu' }, `Moteur : ${ex.best}`));
+    } catch {}
+  }
+  const lib = ex.apres ? ex.info : (ex.info || (ex.best ? `Tu as joué ${ex.san}${ex.perte ? ` (perte : ${ex.perte} points de chances de gagner)` : ''}. Le moteur préférait ${ex.best}.` : `Tu as joué ${ex.san}${ex.perte ? ` (perte : ${ex.perte} points de chances de gagner)` : ''}.`));
+  return h('div', { class: 'ex-carte' }, h('div', { class: 'mini-plateau' }, h('div', { class: 'plateau-env' }, plateau, svg)), legende,
+    h('p', { class: 'ex-txt' }, h('b', {}, `${fCourt.format(ex.g.date)}, contre ${ex.g.adv}. `), lib),
+    h('button', { class: 'btn discret', onclick: () => { ov.fermer(); setTimeout(() => ouvrirPartie(ex.g, { ply: avant }), 60); } }, 'Voir dans la partie'));
+}
+function blocsPerso(cours, ps, perso, ov) {
+  const nomPartie = (t, ...k) => h('div', { class: 'bloc-cours' }, h('h3', {}, t), ...k);
+  const vide = t => h('p', { class: 'ana-msg' }, t);
+  const attente = S.mv.n !== PARTIES.length && !S.mvEchec;
+  const pasAssez = perso.nAna < 6 ? `Seulement ${perso.nAna} de tes ${perso.n} parties de cette ouverture ont été analysées par le moteur : les erreurs précises demandent au moins 6 parties analysées. Tu peux augmenter le nombre de parties analysées dans Réglages.` : null;
+  const B = {};
+  if (!perso.n) {
+    const t = attente ? 'Lecture des coups de tes parties en cours. Ferme puis rouvre cette fiche dans un instant.' : 'Tu n’as pas encore joué cette ouverture en partie rapide : il n’y a donc rien à analyser pour l’instant.';
+    B.diag = nomPartie('Ton diagnostic', vide(t)); B.ameliorer = null; B.variantes = null; B.stats = null; return B;
+  }
+  /* diagnostic */
+  const S_ = perso.synth, tr = progCours(), faites = cours.lignes.filter((_, i) => tr[cours.id + '|' + i] && tr[cours.id + '|' + i].e === 0).length;
+  const dl = (k, v) => v ? h('div', { class: 'diag-l' }, h('b', {}, k), h('span', {}, v)) : null;
+  const liste = a => a.length ? h('ul', { class: 'puces' }, a.slice(0, 4).map(t => h('li', {}, t))) : null;
+  const pire = S_.pire, ligPire = pire && pire.ligne >= 0 ? cours.lignes[pire.ligne] : null;
+  const prioTxt = S_.prio ? `${S_.prio.titre}. ${S_.prio.conseil || ''}` : (pire ? `Rejoue la ligne qui t’oppose à ${pire.lib}, puis revois tes parties dans cette variante.` : null);
+  B.diag = nomPartie('Ton diagnostic',
+    h('p', { class: 'ana-msg', style: 'margin:0 0 8px' }, `Établi sur ${perso.n} parties rapides, dont ${perso.nAna} analysées par le moteur.`),
+    S_.fortes.length ? h('div', { class: 'diag-b' }, h('h4', {}, 'Points forts'), liste(S_.fortes)) : null,
+    S_.faibles.length ? h('div', { class: 'diag-b' }, h('h4', {}, 'Points faibles'), liste(S_.faibles)) : null,
+    !S_.fortes.length && !S_.faibles.length ? vide(pasAssez || 'Rien de net ne ressort pour l’instant : c’est plutôt bon signe, ou il manque de parties.') : null,
+    dl('Erreur la plus fréquente', S_.freq ? S_.freq.texte : null),
+    dl('Variante la plus problématique', pire ? `${pire.lib} : ${pire.def} % de défaites sur ${pire.n} parties.` : null),
+    dl('Plan à mieux comprendre', ligPire ? `${ligPire.nom}. ${ligPire.resume || ''}` : null),
+    dl('Priorité d’entraînement', prioTxt),
+    h('p', { class: 'ana-msg', style: 'margin:10px 0 0' }, `Maîtrise, en deux faits séparés (pas de note globale) : ${faites} ligne${faites > 1 ? 's' : ''} sur ${cours.lignes.length} réussie${faites > 1 ? 's' : ''} sans faute à l’entraînement` + (S_.maitrise.partiesSansGrave ? `, et ${S_.maitrise.partiesSansGrave} parties analysées sans erreur grave avant le 15e coup.` : '.')));
+  /* à améliorer */
+  const recos = perso.recos.filter(r => !r.ok);
+  const bloc = h('div', { class: 'bloc-cours' }, h('h3', {}, 'Ce que tu dois améliorer dans cette ouverture'));
+  if (!recos.length) bloc.append(vide((pasAssez ? pasAssez + ' ' : '') + 'Pour l’instant, aucune habitude gênante ne se détache nettement de tes parties.'));
+  recos.forEach(r => bloc.append(h('div', { class: 'reco' }, h('h4', {}, r.titre), h('p', {}, r.texte), r.conseil && h('p', { class: 'reco-c' }, h('b', {}, 'À retenir : '), r.conseil), ...(r.ex || []).slice(0, 2).map(x => carteExemple(x, cours, ov)))));
+  if (recos.length && perso.insuffisant.length) bloc.append(vide('Pas assez de données pour juger : ' + perso.insuffisant.join(' ; ') + '.'));
+  B.ameliorer = bloc;
+  /* variantes */
+  const bv = h('div', { class: 'bloc-cours' }, h('h3', {}, 'Les variantes que tu rencontres'));
+  if (!perso.variantes.length) bv.append(vide('Pas encore assez de parties (au moins 3 par variante) pour les distinguer.'));
+  else {
+    bv.append(h('p', { class: 'ana-msg', style: 'margin:0 0 8px' }, 'Classées : celles qui te coûtent le plus de points d’abord, puis les plus fréquentes.'));
+    const ordre = perso.variantes.slice().sort((a, b) => (perso.priorite.indexOf(a.cle) + 1 || 99) - (perso.priorite.indexOf(b.cle) + 1 || 99) || b.n - a.n);
+    ordre.slice(0, 8).forEach(v => {
+      const etiq = v.probleme ? ['Te pose problème', 'travail'] : v.solide ? ['Ça marche bien', 'bien'] : null;
+      const act = v.ligne >= 0 ? h('button', { class: 'btn discret', onclick: () => ouvrirCours(cours, v.ligne) }, 'Travailler cette ligne')
+        : v.proche >= 0 ? h('button', { class: 'btn discret', onclick: () => ouvrirCours(cours, v.proche) }, 'Ligne proche du cours')
+        : h('button', { class: 'btn discret', onclick: () => { ov.fermer(); setTimeout(() => ouvrirPartie(v.exemple), 60); } }, 'Voir ta dernière partie');
+      bv.append(h('div', { class: 'var-ligne' }, h('div', { class: 'vl-haut' }, h('b', {}, `${cours.debut.split(' ').slice(-1)[0] && ''}${v.lib}`), etiq && h('i', { class: 'etiq ' + etiq[1] }, etiq[0])),
+        h('p', { class: 'vl-txt' }, `${v.principale ? 'Principale' : 'Secondaire'} : ${v.n} parties (${v.part} %). ${v.vic} % de victoires, ${v.def} % de défaites.` + (v.nAna >= 3 ? ` Erreur grave avant le 15e coup : ${v.graves} partie${v.graves > 1 ? 's' : ''} sur ${v.nAna} analysées.` : '')), act));
+    });
+    if (perso.autresVar) bv.append(vide(`${perso.autresVar} autres parties suivent des lignes plus rares (moins de 3 fois chacune).`));
+  }
+  B.variantes = bv;
+  /* statistiques détaillées */
+  const st = stats(ps), bi = perso.bilan, bs = h('div', { class: 'bloc-cours' }, h('h3', {}, 'Tes statistiques détaillées'));
+  bs.append(h('div', { class: 'bilan-top', style: 'margin-bottom:10px' }, h('div', { class: 'grand', style: 'font-size:34px' }, bi.vic + ' %'), h('div', { class: 'txt' }, `de victoires sur ${bi.n} parties`)), barrePile(st),
+    h('div', { class: 'legende' }, h('span', { class: 'g' }, `${bi.g} gagnées`), h('span', { class: 'p' }, `${bi.p} perdues`), h('span', {}, `${bi.nul} nulles`)),
+    h('p', { class: 'ana-msg', style: 'margin:8px 0 0' }, `Tu ne perds pas dans ${bi.nonDef} % des parties.` + (bi.elo ? ` Elo moyen de tes adversaires : ${bi.elo}.` : '')));
+  if (perso.evol.length >= 2) bs.append(h('p', { class: 'ana-msg', style: 'margin:10px 0 4px' }, 'Évolution (victoires, par tranche de 10 parties, de la plus ancienne à la plus récente) :'),
+    h('div', { class: 'evol' }, perso.evol.map(e => h('div', {}, h('i', { style: `height:${Math.max(6, e.vic)}%` }), h('small', {}, e.vic + ' %')))));
+  else bs.append(vide('Pas assez de parties pour montrer une évolution (il en faut au moins 15).'));
+  bs.append(h('p', { class: 'ana-msg', style: 'margin:8px 0 0' }, 'Un pourcentage de victoires ne dit pas à lui seul si l’ouverture est bonne : il dépend aussi du niveau des adversaires et de la suite de la partie.'));
+  const f = perso.ouvertureFautes;
+  if (f) {
+    bs.append(h('h4', { class: 'sous-t' }, 'Fautes dans tes 15 premiers coups'), h('p', { class: 'ana-msg', style: 'margin:0' }, `Sur ${f.n} parties analysées : ${f.g} avec une gaffe, ${f.e} avec une erreur, ${f.i} avec une imprécision au plus, ${f.aucune} sans aucune faute.`));
+    if (perso.types && perso.types.tact + perso.types.strat) bs.append(h('p', { class: 'ana-msg', style: 'margin:6px 0 0' }, `Erreurs et gaffes : ${perso.types.tact} tactique${perso.types.tact > 1 ? 's' : ''} (pièce en prise, menace ou capture non vue) et ${perso.types.strat} positionnelle${perso.types.strat > 1 ? 's' : ''} (coup qui dégrade la position).`));
+  } else bs.append(vide(pasAssez || 'Pas encore de partie analysée dans cette ouverture.'));
+  if (perso.phases) bs.append(h('h4', { class: 'sous-t' }, 'Où tu fais tes erreurs graves'), h('p', { class: 'ana-msg', style: 'margin:0' }, `Par partie (erreurs + gaffes) : ${perso.phases.o.toFixed(1).replace('.', ',')} en ouverture, ${perso.phases.m.toFixed(1).replace('.', ',')} en milieu de partie, ${perso.phases.f.toFixed(1).replace('.', ',')} en finale.`));
+  if (perso.perdues) { const p = perso.perdues; bs.append(h('p', { class: 'ana-msg', style: 'margin:6px 0 0' }, `Sur ${p.n} défaites analysées, ${p.correcte} avaient une position correcte (au moins 45 % de chances de gagner) après 10 coups : la partie s’est alors jouée plus tard, pas dans l’ouverture. ${p.mauvaise} étaient déjà mal engagées.`)); }
+  if (perso.sortie) bs.append(h('p', { class: 'ana-msg', style: 'margin:6px 0 0' }, `Après 10 coups, tes chances de gagner sont en moyenne de ${perso.sortie.moy} % selon le moteur (${perso.sortie.bon} parties à ${'55 %'} ou plus, ${perso.sortie.mauvais} sous 40 %).`));
+  if (perso.habituels.length) {
+    bs.append(h('h4', { class: 'sous-t' }, 'Les coups que tu joues presque toujours'));
+    bs.append(h('ul', { class: 'puces' }, perso.habituels.slice(0, 6).map(x => h('li', {}, `${libelle(x.apres.concat(x.san), x.ply - x.apres.length)} : ${x.part} % des cas (${x.n} sur ${x.N})` + (x.alt.length && x.part < 85 ? `, sinon ${x.alt.map(a => a.san).join(' ou ')}` : '')))));
+  }
+  const dern = ps.slice(-5).reverse();
+  bs.append(h('h4', { class: 'sous-t' }, 'Tes dernières parties'), h('div', { class: 'liste-a', style: 'margin:6px -4px 0' }, dern.map(g => h('button', { class: 'ligne-a', style: 'padding-left:4px;padding-right:4px', onclick: () => { ov.fermer(); setTimeout(() => ouvrirPartie(g), 50); } },
+    h('span', { class: 'corps' }, h('div', { class: 'adv' }, g.adv, h('span', {}, fCourt.format(g.date))), h('div', { class: 'det' }, detLigne(g)))))));
+  B.stats = bs;
+  return B;
+}
+
+function ouvrirCours(cours, idx0 = null) {
   const ov = ouvrirEntrain();
+  const ps = partiesDuCours(cours), perso = persoDe(cours, ps);
   const in_ = ov.in_;
   const bas0 = cours.co === 'blancs' ? 'w' : 'b';
-  const lignes = cours.lignes.concat(cours.pieges.map(p => ({ nom: 'Piège : ' + p.titre, coups: p.coups, resume: p.texte, notes: {}, piege: true })));
-  let li = Math.min(idx0, lignes.length - 1), i = 0, bas = bas0, lecture = null;
+  const lignes = cours.lignes.concat(cours.pieges.map(p => ({ nom: 'Piège : ' + p.titre, coups: p.coups, resume: p.texte, cond: p.cond, notes: {}, piege: true })));
+  let li = Math.min(idx0 || 0, lignes.length - 1), i = 0, bas = bas0, lecture = null;
   let P = positionsLigne(lignes[li].coups);
   const plateau = h('div', { class: 'plateau', role: 'img', 'aria-label': 'Échiquier' });
   const svgFl = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svgFl.setAttribute('viewBox', '0 0 8 8'); svgFl.setAttribute('class', 'fleches');
@@ -600,7 +723,11 @@ function ouvrirCours(cours, idx0 = 0) {
     if (i === 0) noteBox.append(h('p', { class: 'nc-vide' }, 'Position de départ. Avance coup par coup : chaque coup est expliqué.'));
     else {
       const m = P.moves[i - 1], mine = m.color === bas0;
-      noteBox.append(h('div', { class: 'nc-titre' }, h('b', {}, `${numCoup(i)} ${m.san}`), h('span', { class: 'nc-qui ' + (mine ? 'moi' : 'adv') }, mine ? 'Ton coup' : 'Réponse adverse')), h('p', {}, noteDe(i)));
+      noteBox.append(h('div', { class: 'nc-titre' }, h('b', {}, `${numCoup(i)} ${m.san}`), h('span', { class: 'nc-qui ' + (mine ? 'moi' : 'adv') }, mine ? 'Ton coup' : 'Réponse adverse')), h('p', {}, texteNote(noteDe(i))));
+      const nn = noteDe(i); if (nn && typeof nn === 'object') {
+        if (nn.alt) noteBox.append(h('p', { class: 'nc-plus' }, h('b', {}, 'Autres coups possibles : '), nn.alt));
+        if (nn.att) noteBox.append(h('p', { class: 'nc-plus' }, h('b', {}, mine ? 'Réponse attendue : ' : 'À retenir : '), nn.att));
+      }
     }
     $$('button', coupsBox).forEach(b => b.removeAttribute('aria-current'));
     const cur = i ? $(`button[data-i="${i}"]`, coupsBox) : null; if (cur) cur.setAttribute('aria-current', 'true');
@@ -617,34 +744,41 @@ function ouvrirCours(cours, idx0 = 0) {
   function choisirLigne(k) {
     if (lecture) bascule();
     li = k; P = positionsLigne(lignes[k].coups); i = 0; iPrec = 0;
-    chipsRendre(); resumeBox.textContent = lignes[k].resume || ''; listeCoups(); dessiner();
+    chipsRendre(); resumeBox.textContent = [lignes[k].resume || '', infoLigne(k)].filter(Boolean).join(' '); listeCoups(); dessiner();
     boutonEntr.style.display = lignes[k].piege ? 'none' : '';
   }
   function chipsRendre() {
     chips.innerHTML = '';
-    lignes.forEach((l, k) => { const pr = progCours()[cours.id + '|' + k];
-      chips.append(h('button', { 'aria-pressed': k === li, onclick: () => choisirLigne(k) }, l.nom + (pr && pr.e === 0 && !l.piege ? ' ✓' : ''))); });
+    const ordre = lignes.map((_, k) => k).sort((a, b) => {
+      const A = perso.lignes[a], B = perso.lignes[b], pa = lignes[a].piege ? 1 : 0, pb = lignes[b].piege ? 1 : 0;
+      if (pa !== pb) return pa - pb; if (pa) return a - b;
+      return (A ? A.rang : 99) - (B ? B.rang : 99) || (B ? B.n : 0) - (A ? A.n : 0) || a - b;
+    });
+    ordre.forEach(k => { const l = lignes[k], pr = progCours()[cours.id + '|' + k], P = !l.piege && perso.lignes[k];
+      chips.append(h('button', { 'aria-pressed': k === li, onclick: () => choisirLigne(k) }, l.nom + (P && P.n ? ` · ${P.n}` : '') + (pr && pr.e === 0 && !l.piege ? ' ✓' : ''))); });
   }
-  const boutonEntr = h('button', { class: 'btn', onclick: () => entrainerLigne(ov, cours, lignes, li, () => ouvrirCours(cours, li)) }, 'M’entraîner sur cette ligne');
-  const ps = partiesDuCours(cours), st = stats(ps);
-  const mesParties = h('div', { class: 'bloc-cours' }, h('h3', {}, 'Tes parties dans cette ouverture'));
-  if (!st.n) mesParties.append(h('p', { class: 'ana-msg' }, 'Tu n’as pas encore joué cette ouverture en partie rapide.'));
-  else {
-    mesParties.append(h('div', { class: 'bilan-top', style: 'margin-bottom:10px' }, h('div', { class: 'grand', style: 'font-size:34px' }, pct(st.g, st.n) + ' %'), h('div', { class: 'txt' }, `de victoires sur ${st.n} parties`)), barrePile(st),
-      h('div', { class: 'legende' }, h('span', { class: 'g' }, `${st.g} gagnées`), h('span', { class: 'p' }, `${st.p} perdues`)));
-    const dern = ps.slice(-5).reverse();
-    mesParties.append(h('div', { class: 'liste-a', style: 'margin:12px -4px 0' }, dern.map(g => h('button', { class: 'ligne-a', style: 'padding-left:4px;padding-right:4px', onclick: () => { ov.fermer(); setTimeout(() => ouvrirPartie(g), 50); } },
-      h('span', { class: 'corps' }, h('div', { class: 'adv' }, g.adv, h('span', {}, fCourt.format(g.date))), h('div', { class: 'det' }, detLigne(g)))))));
+  function infoLigne(k) {
+    const l = lignes[k], P = !l.piege && perso.lignes[k]; const t = [];
+    if (l.piege) { if (l.cond) t.push('Condition : ' + l.cond); t.push('Ce n’est jamais garanti : l’adversaire peut très bien ne pas tomber dans le piège.'); return t.join(' '); }
+    if (!perso.n) return '';
+    if (P && P.n) t.push(`Tu rencontres cette ligne dans ${P.n} de tes parties${P.exacte ? '' : ' (ligne proche)'}${P.probleme ? ', et elle te pose problème' : P.principale ? ', c’est une ligne principale pour toi' : ''}.`);
+    else t.push('Cette ligne n’apparaît pas (ou presque pas) dans tes parties : elle passe après les autres.');
+    return t.join(' ');
   }
+  const boutonEntr = h('button', { class: 'btn', onclick: () => entrainerLigne(ov, cours, lignes, li, () => ouvrirCours(cours, li)) }, 'M’entraîner sur cette ligne (sans voir les coups)');
   const sec = (titre, liste) => liste && liste.length ? h('div', { class: 'bloc-cours' }, h('h3', {}, titre), h('ul', { class: 'puces' }, liste.map(t => h('li', {}, t)))) : null;
+  const blocs = blocsPerso(cours, ps, perso, ov);
   in_.append(
     h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: () => ov.fermer() }, 'Fermer'), h('span', { class: 'compteur' }, cours.co === 'blancs' ? 'Avec les blancs' : 'Avec les noirs')),
     h('div', { class: 'issue n', style: 'font-size:23px' }, cours.nom), h('p', { class: 'meta' }, cours.debut),
     h('div', { class: 'bloc-cours idee' }, h('h3', {}, 'L’idée de l’ouverture'), h('p', {}, cours.idee)),
     sec('Ce que tu cherches', cours.objectifs),
     h('div', { class: 'bloc-cours' }, h('h3', {}, 'Les coups, un par un'), chips, resumeBox, h('div', { style: 'margin-top:12px' }, enveloppe), cmd, noteBox, coupsBox, h('div', { style: 'margin-top:14px' }, boutonEntr)),
-    sec('Plans typiques', cours.plans), sec('Erreurs fréquentes', cours.erreurs), mesParties,
-    h('p', { class: 'ana-msg', style: 'margin:18px 0 0' }, 'Fiabilité : les coups de chaque ligne ont été vérifiés par le moteur (position équilibrée, aucune erreur grave). Les explications sont des principes généraux d’ouverture : elles simplifient et ne remplacent pas un livre ou un entraîneur.'));
+    blocPlans(cours.plans),
+    blocs.diag, blocs.ameliorer, blocs.variantes, blocs.stats,
+    sec('Erreurs fréquentes dans cette ouverture', cours.erreurs),
+    h('p', { class: 'ana-msg', style: 'margin:18px 0 0' }, 'Fiabilité : les coups de chaque ligne ont été vérifiés par le moteur (position équilibrée, aucune erreur grave). Les explications sont des principes généraux d’ouverture, simplifiés. Tout ce qui parle de « tes parties » est compté ou mesuré par le moteur sur tes parties réelles, sans rien deviner.'));
+  if (idx0 == null) { const o = perso.lignes.slice().sort((x, y) => x.rang - y.rang || y.n - x.n || x.i - y.i)[0]; if (o) li = o.i; }
   choisirLigne(li);
 }
 
@@ -662,7 +796,7 @@ async function entrainerLigne(ov, cours, lignes, li, retour) {
   const pl = plateauJouable(host, { fen: P.fens[0], bas: moi, couleur: moi, onMove });
   const maj = () => { compteur.textContent = `Coup ${Math.min(Math.ceil((k + 1) / 2), Math.ceil(n / 2))} sur ${Math.ceil(n / 2)}`; };
   const msg = (t, cls = '') => { retourBox.className = 'retour ' + cls; retourBox.textContent = t; };
-  const noteAu = ply => (ligne.notes && ligne.notes[ply]) || '';
+  const noteAu = ply => texteNote(ligne.notes && ligne.notes[ply]);
   async function jeuAdverse() {
     while (k < n && P.moves[k].color !== moi) {
       msg('L’adversaire joue…'); pl.bloquer(true); await new Promise(r => setTimeout(r, 650));
@@ -875,6 +1009,13 @@ function enrichir(g, calc, plies, pos, coups, moi) {
   let mx = -1, mxp = 0;
   for (let k = Math.min(10, n); k <= n; k++) if (M(k) > mx) { mx = M(k); mxp = k; }
   Object.assign(calc.resume, { ty, mx: Math.round(mx), mxp, fin: Math.round(M(n)), rs: g.res === 'resigned' ? 1 : 0 });
+  /* ouverture : fautes de tes 15 premiers coups (rang, gravité, perte, coup du moteur, type) et évaluation après 10 et 15 coups */
+  const of = [];
+  for (const c of calc.coups) if (c.i <= 30 && c.mover === moi && c.cls) {
+    const bu = plies[c.i - 1].b, joue = coups[c.i - 1];
+    of.push([c.i, c.cls, Math.round(c.perte), bu && bu !== uciDe(joue) ? sanDe(pos[c.i - 1].fen, bu) : null, typeFaute(c.i, plies, pos, coups, moi)]);
+  }
+  calc.resume.op = { of, e10: n >= 20 ? Math.round(M(20)) : null, e15: n >= 30 ? Math.round(M(30)) : null };
 }
 async function exercicesDe(g, calc, plies, pos, coups, moi, annule) {
   const mien = e => (moi === 'w' ? e : -e);
@@ -933,7 +1074,7 @@ async function completer(g, avecExos, annule) {
 S.migr = null;
 async function migrerRapide() {
   if (S.migrRun || !S.code) return;
-  const a = PARTIES.filter(g => g.r === 'chess' && S.ana[g.u] && S.ana[g.u].st && !S.ana[g.u].ty && !S.autoErr[g.u]);
+  const a = PARTIES.filter(g => g.r === 'chess' && S.ana[g.u] && S.ana[g.u].st && (!S.ana[g.u].ty || !S.ana[g.u].op) && !S.autoErr[g.u]);
   if (!a.length) return;
   S.migrRun = true; S.migr = { i: 0, n: a.length }; majStatut();
   try {
@@ -1393,6 +1534,7 @@ async function ouvrirPartie(g, opts = {}) {
   } catch { etat = 'aucune'; }
   if (etat !== 'calcul') { rendrePanneau(); dessiner(); }
   if (opts.decisif && ana && ana.calc.pt) { fleches = true; aller_(ana.calc.pt.i - 1); }
+  else if (opts.ply != null) aller_(Math.max(0, Math.min(coups.length, opts.ply)));
 }
 function fermer() {
   const f = $('#feuille'); f._stop?.(); if (f._clavier) document.removeEventListener('keydown', f._clavier);

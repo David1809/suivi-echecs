@@ -370,3 +370,16 @@ details.plie .bloc h2{display:none}
 .nc-qui.adv{background:var(--brume);color:var(--doux)}
 .note-coup p{font-size:15px;line-height:1.5}
 .note-coup .nc-vide{color:var(--doux)}
+
+/* ---- ouvertures : fiche personnalisée ---- */
+.nc-plus{margin:6px 0 0;font-size:14px;color:var(--doux)}
+.plan-ob{border-top:1px solid var(--trait);padding:12px 0 2px}.plan-ob:first-of-type{border-top:0;padding-top:4px}
+.plan-ob h4,.diag-b h4,.reco h4,.sous-t{margin:0 0 6px;font-size:16px}.sous-t{margin-top:16px}
+.plan-ob p,.reco p{margin:4px 0;font-size:15px;line-height:1.5}.plan-simple{margin:6px 0;font-size:15px;line-height:1.5}
+.diag-b{margin:10px 0 4px}.diag-l{display:flex;flex-direction:column;gap:2px;padding:10px 0;border-top:1px solid var(--trait);font-size:15px;line-height:1.45}.diag-l b{font-size:13px;color:var(--doux);text-transform:uppercase;letter-spacing:.04em}
+.reco{padding:14px 0;border-top:1px solid var(--trait)}.reco:first-of-type{border-top:0}.reco-c{color:var(--texte)}
+.ex-carte{margin:12px 0 4px;padding:12px;border:1px solid var(--trait);border-radius:16px;background:var(--surface)}
+.mini-plateau{max-width:260px;margin:0 auto}.ex-txt{margin:10px 0 8px!important;font-size:14px!important}
+.var-ligne{padding:12px 0;border-top:1px solid var(--trait)}.var-ligne:first-of-type{border-top:0}
+.vl-haut{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:16px}.vl-txt{margin:4px 0 8px;font-size:14px;line-height:1.45;color:var(--doux)}
+.evol{display:flex;gap:8px;align-items:flex-end;height:96px;margin:4px 0 6px}.evol>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}.evol i{display:block;width:100%;max-width:34px;border-radius:6px 6px 2px 2px;background:var(--accent);opacity:.85}.evol small{font-size:11px;color:var(--doux)}
