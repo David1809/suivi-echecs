@@ -27,7 +27,7 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} }
 };
 const S = {
-  code: store.get('ec_code'), data: store.get('ec_data', []), mode: store.get('ec_mode'),
+  code: store.get('ec_code'), data: store.get('ec_data', []),
   periode: store.get('ec_periode', '90'), tab: 'accueil',
   filtre: { couleur: 'tous', issue: 'tous', q: '' }, nbListe: 60, ouvCouleur: 'blancs', ouvert: new Set(), syncEnCours: false
 };
@@ -48,7 +48,6 @@ function appliquerTheme(t, memoriser = true) {
 }
 
 /* ---------- données ---------- */
-const MODES = { rapid: 'Rapide', blitz: 'Blitz', bullet: 'Bullet', daily: 'Quotidien' };
 const PERDU = ['checkmated', 'resigned', 'timeout', 'abandoned'];
 const FIN_PERDU = { resigned: 'abandon', checkmated: 'mat', timeout: 'temps écoulé', abandoned: 'déconnexion' };
 const FIN_GAGNE = { resigned: 'abandon adverse', checkmated: 'mat', timeout: 'temps adverse', abandoned: 'départ adverse' };
@@ -67,7 +66,7 @@ async function rpc(nom, args) {
 
 function preparer(brut) {
   const parClasse = {};
-  const arr = brut.map(g => {
+  const arr = brut.filter(g => g.c === 'rapid' && g.r === 'chess').map(g => {
     const issue = g.res === 'win' ? 'g' : PERDU.includes(g.res) ? 'p' : 'n';
     return { ...g, issue, date: new Date(g.t * 1000), delta: null };
   }).sort((a, b) => a.t - b.t);
@@ -81,19 +80,12 @@ function preparer(brut) {
 }
 let PARTIES = preparer(S.data);
 
-const doneesMode = (mode = S.mode) => PARTIES.filter(g => g.c === mode && g.r === 'chess');
+const doneesMode = () => PARTIES;
 function jours(p) { return p === 'tout' ? Infinity : +p; }
 function dansPeriode(arr, p) {
   if (p === 'tout' || !arr.length) return arr;
   const lim = Date.now() / 1000 - jours(p) * 86400;
   return arr.filter(g => g.t >= lim);
-}
-function modeParDefaut() {
-  const lim = Date.now() / 1000 - 90 * 86400;
-  const cpt = {};
-  for (const g of PARTIES) if (g.r === 'chess' && g.t >= lim) cpt[g.c] = (cpt[g.c] || 0) + 1;
-  const best = Object.entries(cpt).sort((a, b) => b[1] - a[1])[0];
-  return best ? best[0] : 'rapid';
 }
 
 function stats(arr) {
@@ -229,12 +221,9 @@ const ligneKV = (k, sous, v, barre) => h('div', { class: 'ligne-kv' }, h('div', 
 
 function vueAccueil() {
   const v = $('#v-accueil'); v.innerHTML = '';
-  const modes = Object.keys(MODES).map(m => [m, PARTIES.filter(g => g.c === m && g.r === 'chess').length]).filter(x => x[1] > 0);
-  if (!S.mode || !modes.find(x => x[0] === S.mode)) S.mode = modeParDefaut();
   const tous = doneesMode(); const per = dansPeriode(tous, S.periode);
   const hero = h('section', { class: 'hero' });
-  hero.append(h('div', { class: 'modes', role: 'group', 'aria-label': 'Cadence' }, modes.sort((a, b) => b[1] - a[1]).map(([m, n]) =>
-    h('button', { 'aria-pressed': m === S.mode, onclick: () => { S.mode = m; store.set('ec_mode', m); rendre(); } }, MODES[m], h('span', { class: 'n' }, n)))));
+  hero.append(h('div', { class: 'modes' }, h('span', { class: 'mode-fixe' }, 'Parties rapides', h('span', { class: 'n' }, tous.length))));
   const dernier = tous.at(-1);
   const val = h('div', { class: 'elo-val' }, dernier ? String(dernier.e) : '—');
   const sub = h('div', { class: 'elo-sub' });
@@ -475,9 +464,6 @@ function vueParties() {
   majStatut();
   const f = S.filtre;
   const grp = (cle, opts) => opts.map(([k, l]) => h('button', { 'aria-pressed': f[cle] === k, onclick: () => { f[cle] = k; S.nbListe = 60; vueParties(); } }, l));
-  v.append(h('div', { class: 'filtres' },
-    ...Object.keys(MODES).filter(m => PARTIES.some(g => g.c === m)).map(m => h('button', { 'aria-pressed': S.mode === m, onclick: () => { S.mode = m; store.set('ec_mode', m); S.nbListe = 60; vueParties(); } }, MODES[m])),
-  ));
   v.append(h('div', { class: 'filtres' }, ...grp('couleur', [['tous', 'Les deux couleurs'], ['blancs', 'Blancs'], ['noirs', 'Noirs']])));
   v.append(h('div', { class: 'filtres' }, ...grp('issue', [['tous', 'Tous résultats'], ['g', 'Victoires'], ['p', 'Défaites'], ['n', 'Nulles']])));
   const champ = h('input', { class: 'recherche', type: 'search', placeholder: 'Chercher un adversaire ou une ouverture', value: f.q, 'aria-label': 'Recherche' });
@@ -505,8 +491,7 @@ function vueOuvertures() {
   const v = $('#v-ouvertures'); v.innerHTML = '';
   v.append(h('div', { class: 'entete' }, h('h1', {}, 'Ouvertures')));
   v.append(h('div', { class: 'filtres' },
-    ...['blancs', 'noirs'].map(c => h('button', { 'aria-pressed': S.ouvCouleur === c, onclick: () => { S.ouvCouleur = c; vueOuvertures(); } }, 'Avec les ' + c)),
-    ...Object.keys(MODES).filter(m => PARTIES.some(g => g.c === m)).map(m => h('button', { 'aria-pressed': S.mode === m, onclick: () => { S.mode = m; store.set('ec_mode', m); vueOuvertures(); } }, MODES[m]))));
+    ...['blancs', 'noirs'].map(c => h('button', { 'aria-pressed': S.ouvCouleur === c, onclick: () => { S.ouvCouleur = c; vueOuvertures(); } }, 'Avec les ' + c))));
   const arr = dansPeriode(doneesMode(), 'tout').filter(g => g.co === S.ouvCouleur);
   const fams = new Map();
   for (const g of arr) {
@@ -516,7 +501,7 @@ function vueOuvertures() {
   }
   const liste = [...fams.values()].sort((a, b) => b.parties.length - a.parties.length);
   if (!liste.length) { v.append(h('div', { class: 'vide-liste' }, 'Pas encore de parties dans ce mode.')); return; }
-  v.append(h('p', { style: 'padding:6px 20px 0;color:var(--doux);font-size:14px' }, 'Toutes tes parties du mode choisi. Touche une ouverture pour voir ses variantes.'));
+  v.append(h('p', { style: 'padding:6px 20px 0;color:var(--doux);font-size:14px' }, 'Toutes tes parties rapides. Touche une ouverture pour voir ses variantes.'));
   liste.forEach(F => {
     const s = stats(F.parties);
     const bloc = h('div', { class: 'ouv' + (S.ouvert.has(S.ouvCouleur + F.fam) ? ' ouvert' : '') });
@@ -1517,7 +1502,6 @@ function afficherAcces(erreur = '') {
 }
 function demarrer() {
   $('#acces').style.display = 'none'; $('#app').style.display = ''; $('nav.tabs').style.display = '';
-  if (!S.mode) S.mode = modeParDefaut();
   aller(S.tab);
 }
 async function init() {
