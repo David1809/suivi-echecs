@@ -7,6 +7,7 @@ const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzeXJyY3Jrbnhka2RzeGtvb29hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyODQyMzMsImV4cCI6MjEwNjg2MDIzM30.4ks8YNW4oYoPbSOiBT4Y9UCotErus8aydDaQUDm7crs';
 const PSEUDO = 'David180998';
 
+const C = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const h = (tag, attrs = {}, ...kids) => {
@@ -30,6 +31,21 @@ const S = {
   periode: store.get('ec_periode', '90'), tab: 'accueil',
   filtre: { couleur: 'tous', issue: 'tous', q: '' }, nbListe: 60, ouvCouleur: 'blancs', ouvert: new Set(), syncEnCours: false
 };
+
+
+/* ---------- thèmes ---------- */
+const THEMES = {
+  bleu: { nom: 'Bleus et gris', det: 'Clair et sobre', meta: '#F2F5FA', puces: ['#F2F5FA', '#2F66D0', '#4F8CF0', '#6B7C99'] },
+  violet: { nom: 'Violet pastel', det: 'Version précédente', meta: '#F6F7FC', puces: ['#F6F7FC', '#6A58C8', '#5B8DEF', '#E58EC0'] },
+  sombre: { nom: 'Nuit', det: 'Première version', meta: '#0C0E1E', puces: ['#0C0E1E', '#B9A6F8', '#8DB8F6', '#E8A0D2'] }
+};
+function appliquerTheme(t, memoriser = true) {
+  if (!THEMES[t]) t = 'bleu';
+  S.theme = t; document.documentElement.dataset.theme = t;
+  const m = $('meta[name=theme-color]'); if (m) m.setAttribute('content', THEMES[t].meta);
+  const cs = $('meta[name=color-scheme]'); if (cs) cs.setAttribute('content', t === 'sombre' ? 'dark' : 'light');
+  if (memoriser) store.set('ec_theme', t);
+}
 
 /* ---------- données ---------- */
 const MODES = { rapid: 'Rapide', blitz: 'Blitz', bullet: 'Bullet', daily: 'Quotidien' };
@@ -173,13 +189,13 @@ function dessinerCourbe(host, pts, onScrub) {
     if (mo !== dernier) { if (dernier !== -1 && i > marges * 0.5 && i < ech.length - 6) labels += `<text class="axe" x="${X(i)}" y="${H - 6}" text-anchor="middle">${fMois.format(new Date(p.t * 1000))}</text>`; dernier = mo; }
   });
   svg.innerHTML = `<defs>
-    <linearGradient id="${idg}a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2F66D0" stop-opacity=".16"/><stop offset="1" stop-color="#2F66D0" stop-opacity="0"/></linearGradient>
-    <linearGradient id="${idg}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4F8CF0"/><stop offset="1" stop-color="#2F66D0"/></linearGradient>
+    <linearGradient id="${idg}a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C('--g-l2')}" stop-opacity=".16"/><stop offset="1" stop-color="${C('--g-l2')}" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${idg}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${C('--g-l1')}"/><stop offset="1" stop-color="${C('--g-l2')}"/></linearGradient>
   </defs>${grille}${labels}
   <path d="${area}" fill="url(#${idg}a)"/>
   <path class="ligne" d="${d}" fill="none" stroke="url(#${idg}l)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
-  <g class="cur" style="display:none"><line y1="${m.t - 6}" y2="${H - m.b}" stroke="#2F66D0" stroke-opacity=".45" stroke-dasharray="3 4"/><circle r="6" fill="#FFFFFF" stroke="#2F66D0" stroke-width="2.5"/></g>
-  <circle class="fin" cx="${P.at(-1)[0]}" cy="${P.at(-1)[1]}" r="5" fill="#2F66D0"/>`;
+  <g class="cur" style="display:none"><line y1="${m.t - 6}" y2="${H - m.b}" stroke="${C('--g-l2')}" stroke-opacity=".45" stroke-dasharray="3 4"/><circle r="6" fill="${C('--surface')}" stroke="${C('--g-l2')}" stroke-width="2.5"/></g>
+  <circle class="fin" cx="${P.at(-1)[0]}" cy="${P.at(-1)[1]}" r="5" fill="${C('--g-l2')}"/>`;
   host.append(svg);
   const ligne = $('.ligne', svg);
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches && !host.dataset.anime) {
@@ -361,9 +377,9 @@ function blocProgression(per) {
   const barres = semaines.map((w, i) => {
     const hh = (taux_(w) / maxi) * (H - bas - haut), x = X(i) - bw / 2, y = H - bas - hh;
     const lab = new Date(w.k).toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' });
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw}" height="${hh.toFixed(1)}" rx="5" fill="${i === semaines.length - 1 ? '#2F66D0' : '#9DB8EE'}"/>` +
-      `<text x="${X(i).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="#1B2433">${taux_(w).toFixed(1).replace('.', ',')}</text>` +
-      `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#5F6B80">${lab}</text>`;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw}" height="${hh.toFixed(1)}" rx="5" fill="${i === semaines.length - 1 ? C('--accent') : C('--accent-clair')}"/>` +
+      `<text x="${X(i).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="${C('--texte')}">${taux_(w).toFixed(1).replace('.', ',')}</text>` +
+      `<text x="${X(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="${C('--doux')}">${lab}</text>`;
   }).join('');
   sec.append(h('div', { class: 'prog-graph', html: `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Gaffes et erreurs pour 100 coups, par semaine">${barres}</svg>` }));
   sec.append(h('p', { class: 'ana-msg', style: 'margin-top:6px' }, 'Gaffes et erreurs pour 100 coups, par semaine (lundi de la semaine en bas). Plus c’est bas, mieux c’est.'));
@@ -518,6 +534,10 @@ function vueOuvertures() {
 function vueReglages() {
   const v = $('#v-reglages'); v.innerHTML = '';
   v.append(h('div', { class: 'entete' }, h('h1', {}, 'Réglages')));
+  v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Apparence'), h('p', {}, 'Choisis les couleurs de l’appli. Le choix est gardé sur cet appareil.'),
+    h('div', { class: 'themes', role: 'group', 'aria-label': 'Thème' }, Object.entries(THEMES).map(([k, t]) =>
+      h('button', { class: 'theme-btn', 'aria-pressed': S.theme === k, onclick: () => { appliquerTheme(k); vueReglages(); } },
+        h('span', { class: 'theme-puces', html: t.puces.map(c => `<i style="background:${c}"></i>`).join('') }), h('span', {}, t.nom, h('small', {}, t.det)))))));
   const etat = h('p', {}, `Compte chess.com : ${PSEUDO}. ${PARTIES.length} parties enregistrées${S.derniere ? ', dernière mise à jour ' + new Date(S.derniere).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : ''}.`);
   const btn = h('button', { class: 'btn', onclick: () => synchroniser(btn, etat) }, 'Synchroniser maintenant');
   if (S.syncEnCours) { btn.disabled = true; btn.textContent = 'Synchronisation en cours'; }
@@ -587,6 +607,7 @@ let verrou = Promise.resolve();
 const exclusif = fn => { const p = verrou.then(fn, fn); verrou = p.catch(() => {}); return p; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 S.ana = store.get('ec_ana', {});
+S.theme = store.get('ec_theme', 'bleu');
 S.niveau = store.get('ec_niv', null);
 S.nAuto = store.get('ec_nauto', 30);
 S.auto = store.get('ec_auto', true);
@@ -907,8 +928,8 @@ async function ouvrirPartie(g, opts = {}) {
     let fl = '';
     if (fleches && ana && i < coups.length && ana.plies[i].b) {
       const meil = ana.plies[i].b, joue = uciDe(coups[i]), cc = ana.calc.coups[i];
-      if (cc && cc.cls && joue !== meil) fl += fleche(joue, '#55627C');
-      fl += fleche(meil, '#2F7BF6');
+      if (cc && cc.cls && joue !== meil) fl += fleche(joue, C('--fl-joue'));
+      fl += fleche(meil, C('--fl-mieux'));
     }
     svgFl.innerHTML = fl;
     bFl.disabled = !ana; bFl.classList.toggle('actif', fleches && !!ana);
@@ -1084,13 +1105,13 @@ async function ouvrirPartie(g, opts = {}) {
     const pt = ana.calc.pt;
     host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
       <defs><clipPath id="hau"><rect x="0" y="0" width="${W}" height="${mid}"/></clipPath><clipPath id="bas"><rect x="0" y="${mid}" width="${W}" height="${mid}"/></clipPath></defs>
-      <path d="${zone}" fill="#4F8CF0" fill-opacity=".30" clip-path="url(#hau)"/>
-      <path d="${zone}" fill="#6B7C99" fill-opacity=".32" clip-path="url(#bas)"/>
-      <line x1="0" x2="${W}" y1="${mid}" y2="${mid}" stroke="#B3BDCE" stroke-dasharray="3 4"/>
-      <path d="${d}" fill="none" stroke="#2F66D0" stroke-width="2" stroke-linejoin="round"/>
-      ${pt ? `<circle cx="${X(pt.i).toFixed(1)}" cy="${Y(pt.i).toFixed(1)}" r="6.5" fill="#fff" stroke="#2F66D0" stroke-width="2.5"/>` : ''}
-      <line class="cur" x1="0" x2="0" y1="0" y2="${H}" stroke="#1B2433" stroke-width="1.5"/>
-      <text x="6" y="12" font-size="11" fill="#5F6B80">Tu es mieux</text><text x="6" y="${H - 5}" font-size="11" fill="#5F6B80">L’adversaire est mieux</text></svg>`;
+      <path d="${zone}" fill="${C('--zone-h')}" fill-opacity=".30" clip-path="url(#hau)"/>
+      <path d="${zone}" fill="${C('--zone-b')}" fill-opacity=".32" clip-path="url(#bas)"/>
+      <line x1="0" x2="${W}" y1="${mid}" y2="${mid}" stroke="${C('--g-ligne')}" stroke-dasharray="3 4"/>
+      <path d="${d}" fill="none" stroke="${C('--g-l2')}" stroke-width="2" stroke-linejoin="round"/>
+      ${pt ? `<circle cx="${X(pt.i).toFixed(1)}" cy="${Y(pt.i).toFixed(1)}" r="6.5" fill="${C('--surface')}" stroke="${C('--g-l2')}" stroke-width="2.5"/>` : ''}
+      <line class="cur" x1="0" x2="0" y1="0" y2="${H}" stroke="${C('--texte')}" stroke-width="1.5"/>
+      <text x="6" y="12" font-size="11" fill="${C('--doux')}">Tu es mieux</text><text x="6" y="${H - 5}" font-size="11" fill="${C('--doux')}">L’adversaire est mieux</text></svg>`;
     courbeEl = host; curseurEl = $('.cur', host); majCurseur();
     const aller2 = ev => { const r = host.getBoundingClientRect(); aller_(Math.round(((ev.clientX - r.left) / r.width) * n)); };
     host.onpointerdown = ev => { host.setPointerCapture(ev.pointerId); aller2(ev); };
@@ -1319,7 +1340,7 @@ async function seanceExos(liste, fini) {
       actions.innerHTML = ''; actions.append(suivant());
     }
     async function solution() {
-      essais = Math.max(essais, 2); pl.bloquer(true); pl.set(ex.fen, { fleches: [[ex.j, '#55627C'], [ex.b, '#2F7BF6']] });
+      essais = Math.max(essais, 2); pl.bloquer(true); pl.set(ex.fen, { fleches: [[ex.j, C('--fl-joue')], [ex.b, C('--fl-mieux')]] });
       retour.className = 'retour mauvais'; retour.innerHTML = '';
       retour.append(h('b', {}, `Le meilleur coup était ${sanDe(ex.fen, ex.b)} (flèche bleue).`), h('p', { class: 'ana-msg' }, 'Le moteur prépare l’explication…'));
       terminer(false);
@@ -1390,7 +1411,7 @@ async function seanceFinale(drill, fini) {
     if (jeu.turn() !== 'w' || jeu.isGameOver()) return;
     const fen = jeu.fen(); pl.bloquer(true); etat('Le moteur cherche un bon coup…');
     const r = await exclusif(() => getMoteur().evaluer(fen, { d: 8, cap: 500 }));
-    pl.set(fen, { fleches: r.b ? [[r.b, '#2F7BF6']] : [] }); pl.bloquer(false); etat(r.b ? `Indice : essaie ${sanDe(fen, r.b)}.` : 'Pas d’indice disponible.');
+    pl.set(fen, { fleches: r.b ? [[r.b, C('--fl-mieux')]] : [] }); pl.bloquer(false); etat(r.b ? `Indice : essaie ${sanDe(fen, r.b)}.` : 'Pas d’indice disponible.');
   } }, 'Indice');
   actions.append(bIndice, bRec);
   async function onMove(m) {
@@ -1500,6 +1521,7 @@ function demarrer() {
   aller(S.tab);
 }
 async function init() {
+  appliquerTheme(S.theme, false);
   document.body.insertAdjacentHTML('afterbegin', SPRITE);
   $$('nav.tabs button').forEach(b => b.addEventListener('click', () => aller(b.dataset.t)));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
