@@ -337,3 +337,36 @@ details.plie .bloc h2{display:none}
 
 .mode-fixe{padding:7px 14px;border-radius:99px;background:var(--surface);color:var(--accent-fort);font-weight:600;font-size:15px;box-shadow:0 0 0 1px var(--trait)}
 .mode-fixe .n{font-size:12px;opacity:.75;margin-left:8px;font-weight:500}
+
+/* ---------- ouvertures : cours ---------- */
+.intro-ouv{padding:4px 20px 0;color:var(--doux);font-size:15px}
+.cours-liste{margin-top:10px;border-top:1px solid var(--trait)}
+.cours-ligne{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 20px;border-bottom:1px solid var(--trait)}
+.cours-ligne:active{background:var(--brume)}
+.cl-corps{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cl-nom{font-family:var(--titre);font-weight:600;font-size:17px;line-height:1.25}
+.cl-sub{font-size:13px;color:var(--doux)}
+.cl-prog{font-size:12.5px;color:var(--accent-fort)}
+.cl-stat{flex:none;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.cl-stat b{font-family:var(--titre);font-size:20px;font-variant-numeric:tabular-nums}
+.cl-stat small{color:var(--doux);font-size:12px}
+.etiq{font-style:normal;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:99px;margin-top:2px}
+.etiq.travail{background:var(--ko-bg);color:var(--rose-t)}
+.etiq.bien{background:var(--ok-bg);color:var(--bleu-t)}
+.bloc-cours{margin-top:22px}
+.bloc-cours h3{font-size:18px;margin-bottom:8px}
+.bloc-cours.idee{padding:14px 16px;border-radius:16px;background:var(--teinte)}
+.bloc-cours.idee h3{color:var(--accent-fort)}
+.bloc-cours.idee p{font-size:15.5px;line-height:1.55}
+.puces{list-style:none;display:flex;flex-direction:column;gap:8px}
+.puces li{position:relative;padding-left:20px;font-size:15px;line-height:1.5}
+.puces li:before{content:"";position:absolute;left:3px;top:.62em;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.chips-lignes{padding:4px 0 0;flex-wrap:wrap}
+.note-coup{margin-top:4px;padding:12px 14px;border-radius:14px;background:var(--surface);border:1px solid var(--trait);min-height:84px}
+.nc-titre{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.nc-titre b{font-family:var(--titre);font-size:18px}
+.nc-qui{font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px}
+.nc-qui.moi{background:var(--teinte);color:var(--accent-fort)}
+.nc-qui.adv{background:var(--brume);color:var(--doux)}
+.note-coup p{font-size:15px;line-height:1.5}
+.note-coup .nc-vide{color:var(--doux)}

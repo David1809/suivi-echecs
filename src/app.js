@@ -1,6 +1,7 @@
 import { Chess } from 'chess.js';
 import { SPRITE } from './pieces.js';
-import { expliquerCoup, sanDe as sanDeX } from './expliquer.js';
+import { expliquerCoup, pourquoiMeilleur } from './expliquer.js';
+import { COURS } from './ouvertures-data.js';
 import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval, winPct } from './analyse.js';
 
 const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
@@ -487,12 +488,38 @@ function vueParties() {
   liste();
 }
 
+/* ---------- ouvertures : cours ---------- */
+const partiesDuCours = c => PARTIES.filter(g => g.co === c.co && c.re.test(g.o || ''));
+const progCours = () => store.get('ec_cours_prog', {});
+function sauverProg(id, idx, erreurs) { const p = progCours(); p[id + '|' + idx] = { e: erreurs, d: dateLocale() }; store.set('ec_cours_prog', p); }
+
 function vueOuvertures() {
   const v = $('#v-ouvertures'); v.innerHTML = '';
   v.append(h('div', { class: 'entete' }, h('h1', {}, 'Ouvertures')));
-  v.append(h('div', { class: 'filtres' },
-    ...['blancs', 'noirs'].map(c => h('button', { 'aria-pressed': S.ouvCouleur === c, onclick: () => { S.ouvCouleur = c; vueOuvertures(); } }, 'Avec les ' + c))));
-  const arr = dansPeriode(doneesMode(), 'tout').filter(g => g.co === S.ouvCouleur);
+  v.append(h('p', { class: 'intro-ouv' }, 'Les ouvertures que tu joues le plus. Touche-en une pour comprendre son idée, rejouer ses coups clés avec leurs explications, et t’entraîner.'));
+  const L = COURS.map(c => { const ps = partiesDuCours(c), s = stats(ps); return { c, ps, s }; }).sort((a, b) => b.s.n - a.s.n);
+  const liste = h('div', { class: 'cours-liste' });
+  L.forEach(({ c, s }) => {
+    const prog = progCours(); const nl = c.lignes.length;
+    const faites = c.lignes.filter((_, i) => prog[c.id + '|' + i] && prog[c.id + '|' + i].e === 0).length;
+    let etiq = null;
+    if (s.n >= 15 && pct(s.g, s.n) < 45) etiq = ['À travailler', 'travail']; else if (s.n >= 15 && pct(s.g, s.n) >= 55) etiq = ['Ça marche bien', 'bien'];
+    liste.append(h('button', { class: 'cours-ligne', onclick: () => ouvrirCours(c) },
+      h('span', { class: 'cl-corps' }, h('span', { class: 'cl-nom' }, c.nom),
+        h('span', { class: 'cl-sub' }, `${c.co === 'blancs' ? 'Avec les blancs' : 'Avec les noirs'}, ${c.debut}`),
+        h('span', { class: 'cl-prog' }, faites ? `${faites} ligne${faites > 1 ? 's' : ''} sur ${nl} sans faute à l’entraînement` : `${nl} ligne${nl > 1 ? 's' : ''} à travailler`)),
+      h('span', { class: 'cl-stat' }, s.n ? [h('b', {}, `${pct(s.g, s.n)} %`), h('small', {}, `${s.n} parties`)] : h('small', {}, 'Aucune partie'), etiq && h('i', { class: 'etiq ' + etiq[1] }, etiq[0]))));
+  });
+  v.append(liste);
+  const det = h('details', { class: 'plie', style: 'margin:26px 20px 0' }, h('summary', {}, 'Toutes mes ouvertures (statistiques)'), h('div', { id: 'stats-ouv' }));
+  v.append(det);
+  det.addEventListener('toggle', () => { if (det.open && !$('#stats-ouv').children.length) statsOuvertures($('#stats-ouv')); });
+}
+
+function statsOuvertures(host) {
+  host.append(h('div', { class: 'filtres', style: 'padding-left:0' },
+    ...['blancs', 'noirs'].map(c => h('button', { 'aria-pressed': S.ouvCouleur === c, onclick: () => { S.ouvCouleur = c; host.innerHTML = ''; statsOuvertures(host); } }, 'Avec les ' + c))));
+  const arr = doneesMode().filter(g => g.co === S.ouvCouleur);
   const fams = new Map();
   for (const g of arr) {
     const o = famille(g.o); const F = fams.get(o.fam) || { fam: o.fam, parties: [], vars: new Map() };
@@ -500,11 +527,11 @@ function vueOuvertures() {
     const Vv = F.vars.get(k) || []; Vv.push(g); F.vars.set(k, Vv); fams.set(o.fam, F);
   }
   const liste = [...fams.values()].sort((a, b) => b.parties.length - a.parties.length);
-  if (!liste.length) { v.append(h('div', { class: 'vide-liste' }, 'Pas encore de parties dans ce mode.')); return; }
-  v.append(h('p', { style: 'padding:6px 20px 0;color:var(--doux);font-size:14px' }, 'Toutes tes parties rapides. Touche une ouverture pour voir ses variantes.'));
+  if (!liste.length) { host.append(h('div', { class: 'vide-liste' }, 'Pas encore de parties.')); return; }
   liste.forEach(F => {
     const s = stats(F.parties);
-    const bloc = h('div', { class: 'ouv' + (S.ouvert.has(S.ouvCouleur + F.fam) ? ' ouvert' : '') });
+    const bloc = h('div', { class: 'ouv', style: 'padding-left:0;padding-right:0' + (S.ouvert.has(S.ouvCouleur + F.fam) ? '' : '') });
+    if (S.ouvert.has(S.ouvCouleur + F.fam)) bloc.classList.add('ouvert');
     bloc.append(h('button', { 'aria-expanded': S.ouvert.has(S.ouvCouleur + F.fam), onclick: () => { const k = S.ouvCouleur + F.fam; S.ouvert.has(k) ? S.ouvert.delete(k) : S.ouvert.add(k); bloc.classList.toggle('ouvert'); } },
       h('div', { class: 't' }, h('span', { class: 'nom' }, F.fam), h('span', { class: 'nb' }, `${s.n} parties`)), barrePile(s), h('div', { class: 'pct' }, `${pct(s.g, s.n)} % de victoires`)));
     const vars = h('div', { class: 'vars' });
@@ -512,8 +539,181 @@ function vueOuvertures() {
       const sv = stats(ps);
       vars.append(h('div', { class: 'var' }, h('div', { class: 't' }, h('span', { class: 'nom' }, nom), h('span', { class: 'nb' }, `${sv.n} / ${pct(sv.g, sv.n)} %`)), barrePile(sv)));
     });
-    bloc.append(vars); v.append(bloc);
+    bloc.append(vars); host.append(bloc);
   });
+}
+
+/* positions d'une ligne : fen[i] = position après i demi-coups */
+function positionsLigne(coupsSan) {
+  const c = new Chess(), fens = [c.fen()], moves = [];
+  for (const san of coupsSan.split(' ')) { const m = c.move(san); moves.push(m); fens.push(c.fen()); }
+  return { fens, moves };
+}
+const numCoup = ply => `${Math.ceil(ply / 2)}${ply % 2 ? '.' : '…'}`;
+
+function ouvrirCours(cours, idx0 = 0) {
+  const ov = ouvrirEntrain();
+  const in_ = ov.in_;
+  const bas0 = cours.co === 'blancs' ? 'w' : 'b';
+  const lignes = cours.lignes.concat(cours.pieges.map(p => ({ nom: 'Piège : ' + p.titre, coups: p.coups, resume: p.texte, notes: {}, piege: true })));
+  let li = Math.min(idx0, lignes.length - 1), i = 0, bas = bas0, lecture = null;
+  let P = positionsLigne(lignes[li].coups);
+  const plateau = h('div', { class: 'plateau', role: 'img', 'aria-label': 'Échiquier' });
+  const svgFl = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svgFl.setAttribute('viewBox', '0 0 8 8'); svgFl.setAttribute('class', 'fleches');
+  const enveloppe = h('div', { class: 'plateau-env' }, plateau, svgFl);
+  const noteBox = h('div', { class: 'note-coup' });
+  const chips = h('div', { class: 'filtres chips-lignes' });
+  const resumeBox = h('p', { class: 'ana-msg', style: 'margin:6px 0 0' });
+  const ic = d => `<svg viewBox="0 0 24 24">${d}</svg>`;
+  const btn = (nom, svg, fn, cls = '') => h('button', { 'aria-label': nom, title: nom, class: cls, onclick: fn, html: svg });
+  const bTour = btn('Retourner l’échiquier', ic('<path d="M7 4v14m0 0l-3-3m3 3l3-3M17 20V6m0 0l-3 3m3-3l3 3"/>'), () => { bas = bas === 'w' ? 'b' : 'w'; dessiner(); });
+  const bDebut = btn('Début', ic('<path d="M6 5v14M18 6l-8 6 8 6z"/>'), () => aller_(0));
+  const bPrec = btn('Coup précédent', ic('<path d="M15 6l-6 6 6 6"/>'), () => aller_(i - 1));
+  const bLire = btn('Lecture', ic('<path d="M8 5l11 7-11 7z"/>'), () => bascule(), 'lecture');
+  const bSuiv = btn('Coup suivant', ic('<path d="M9 6l6 6-6 6"/>'), () => aller_(i + 1));
+  const bFin = btn('Fin', ic('<path d="M18 5v14M6 6l8 6-8 6z"/>'), () => aller_(P.moves.length));
+  const cmd = h('div', { class: 'cmd' }, bTour, bDebut, bPrec, bLire, bSuiv, bFin);
+  function bascule() {
+    if (lecture) { clearInterval(lecture); lecture = null; bLire.innerHTML = ic('<path d="M8 5l11 7-11 7z"/>'); return; }
+    if (i >= P.moves.length) i = 0;
+    bLire.innerHTML = ic('<path d="M8 5v14M16 5v14"/>');
+    lecture = setInterval(() => { if (i >= P.moves.length) { bascule(); return; } aller_(i + 1); }, 1700);
+  }
+  let iPrec = 0;
+  function aller_(n) { i = Math.max(0, Math.min(P.moves.length, n)); dessiner(); }
+  function noteDe(ply) {
+    const l = lignes[li]; const m = P.moves[ply - 1];
+    if (l.notes && l.notes[ply]) return l.notes[ply];
+    try {
+      const r = pourquoiMeilleur(P.fens[ply - 1], m.from + m.to + (m.promotion || ''), [], 0, {});
+      const t = r && r[0]; if (t) return t.charAt(0).toUpperCase() + t.slice(1);
+    } catch {}
+    return '';
+  }
+  function dessiner() {
+    const dern = i > 0 ? P.moves[i - 1] : null;
+    construirePlateau(plateau, P.fens[i], bas, { dernier: dern });
+    if (dern && i === iPrec + 1) animerCoup(plateau, dern, bas);
+    iPrec = i; svgFl.innerHTML = '';
+    bDebut.disabled = bPrec.disabled = i === 0; bSuiv.disabled = bFin.disabled = i === P.moves.length;
+    noteBox.innerHTML = '';
+    if (i === 0) noteBox.append(h('p', { class: 'nc-vide' }, 'Position de départ. Avance coup par coup : chaque coup est expliqué.'));
+    else {
+      const m = P.moves[i - 1], mine = m.color === bas0;
+      noteBox.append(h('div', { class: 'nc-titre' }, h('b', {}, `${numCoup(i)} ${m.san}`), h('span', { class: 'nc-qui ' + (mine ? 'moi' : 'adv') }, mine ? 'Ton coup' : 'Réponse adverse')), h('p', {}, noteDe(i)));
+    }
+    $$('button', coupsBox).forEach(b => b.removeAttribute('aria-current'));
+    const cur = i ? $(`button[data-i="${i}"]`, coupsBox) : null; if (cur) cur.setAttribute('aria-current', 'true');
+  }
+  const coupsBox = h('div', { class: 'coups' });
+  function listeCoups() {
+    coupsBox.innerHTML = ''; let tour = null;
+    P.moves.forEach((m, k) => {
+      const b = h('button', { 'data-i': k + 1, onclick: () => aller_(k + 1) }, m.san);
+      if (m.color === 'w') { tour = h('span', { class: 'tour' }, h('span', { class: 'num' }, (k / 2 + 1) + '.'), b); coupsBox.append(tour); }
+      else if (tour && k > 0) { tour.append(b); tour = null; } else coupsBox.append(h('span', { class: 'tour' }, h('span', { class: 'num' }, '…'), b));
+    });
+  }
+  function choisirLigne(k) {
+    if (lecture) bascule();
+    li = k; P = positionsLigne(lignes[k].coups); i = 0; iPrec = 0;
+    chipsRendre(); resumeBox.textContent = lignes[k].resume || ''; listeCoups(); dessiner();
+    boutonEntr.style.display = lignes[k].piege ? 'none' : '';
+  }
+  function chipsRendre() {
+    chips.innerHTML = '';
+    lignes.forEach((l, k) => { const pr = progCours()[cours.id + '|' + k];
+      chips.append(h('button', { 'aria-pressed': k === li, onclick: () => choisirLigne(k) }, l.nom + (pr && pr.e === 0 && !l.piege ? ' ✓' : ''))); });
+  }
+  const boutonEntr = h('button', { class: 'btn', onclick: () => entrainerLigne(ov, cours, lignes, li, () => ouvrirCours(cours, li)) }, 'M’entraîner sur cette ligne');
+  const ps = partiesDuCours(cours), st = stats(ps);
+  const mesParties = h('div', { class: 'bloc-cours' }, h('h3', {}, 'Tes parties dans cette ouverture'));
+  if (!st.n) mesParties.append(h('p', { class: 'ana-msg' }, 'Tu n’as pas encore joué cette ouverture en partie rapide.'));
+  else {
+    mesParties.append(h('div', { class: 'bilan-top', style: 'margin-bottom:10px' }, h('div', { class: 'grand', style: 'font-size:34px' }, pct(st.g, st.n) + ' %'), h('div', { class: 'txt' }, `de victoires sur ${st.n} parties`)), barrePile(st),
+      h('div', { class: 'legende' }, h('span', { class: 'g' }, `${st.g} gagnées`), h('span', { class: 'p' }, `${st.p} perdues`)));
+    const dern = ps.slice(-5).reverse();
+    mesParties.append(h('div', { class: 'liste-a', style: 'margin:12px -4px 0' }, dern.map(g => h('button', { class: 'ligne-a', style: 'padding-left:4px;padding-right:4px', onclick: () => { ov.fermer(); setTimeout(() => ouvrirPartie(g), 50); } },
+      h('span', { class: 'corps' }, h('div', { class: 'adv' }, g.adv, h('span', {}, fCourt.format(g.date))), h('div', { class: 'det' }, detLigne(g)))))));
+  }
+  const sec = (titre, liste) => liste && liste.length ? h('div', { class: 'bloc-cours' }, h('h3', {}, titre), h('ul', { class: 'puces' }, liste.map(t => h('li', {}, t)))) : null;
+  in_.append(
+    h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: () => ov.fermer() }, 'Fermer'), h('span', { class: 'compteur' }, cours.co === 'blancs' ? 'Avec les blancs' : 'Avec les noirs')),
+    h('div', { class: 'issue n', style: 'font-size:23px' }, cours.nom), h('p', { class: 'meta' }, cours.debut),
+    h('div', { class: 'bloc-cours idee' }, h('h3', {}, 'L’idée de l’ouverture'), h('p', {}, cours.idee)),
+    sec('Ce que tu cherches', cours.objectifs),
+    h('div', { class: 'bloc-cours' }, h('h3', {}, 'Les coups, un par un'), chips, resumeBox, h('div', { style: 'margin-top:12px' }, enveloppe), cmd, noteBox, coupsBox, h('div', { style: 'margin-top:14px' }, boutonEntr)),
+    sec('Plans typiques', cours.plans), sec('Erreurs fréquentes', cours.erreurs), mesParties,
+    h('p', { class: 'ana-msg', style: 'margin:18px 0 0' }, 'Fiabilité : les coups de chaque ligne ont été vérifiés par le moteur (position équilibrée, aucune erreur grave). Les explications sont des principes généraux d’ouverture : elles simplifient et ne remplacent pas un livre ou un entraîneur.'));
+  choisirLigne(li);
+}
+
+/* ----- entraînement sur une ligne : tu joues tes coups, l'appli joue ceux de l'adversaire ----- */
+async function entrainerLigne(ov, cours, lignes, li, retour) {
+  const ligne = lignes[li], moi = cours.co === 'blancs' ? 'w' : 'b';
+  const P = positionsLigne(ligne.coups); const n = P.moves.length;
+  const uci = m => m.from + m.to + (m.promotion || '');
+  let k = 0, erreurs = 0, indices = 0, fini = false, busy = false;
+  const in_ = ov.in_; in_.innerHTML = '';
+  const host = h('div', {}), retourBox = h('div', { class: 'retour' }), actions = h('div', { class: 'actions' });
+  const compteur = h('span', { class: 'compteur' });
+  in_.append(h('div', { class: 'haut' }, h('button', { class: 'fermer', onclick: retour }, 'Retour au cours'), compteur),
+    h('div', { class: 'issue n', style: 'font-size:23px' }, 'Entraînement'), h('p', { class: 'meta' }, `${cours.nom} : ${ligne.nom}. Tu joues les ${moi === 'w' ? 'blancs' : 'noirs'}, l’appli joue l’adversaire. Trouve chaque coup de la ligne.`), host, retourBox, actions);
+  const pl = plateauJouable(host, { fen: P.fens[0], bas: moi, couleur: moi, onMove });
+  const maj = () => { compteur.textContent = `Coup ${Math.min(Math.ceil((k + 1) / 2), Math.ceil(n / 2))} sur ${Math.ceil(n / 2)}`; };
+  const msg = (t, cls = '') => { retourBox.className = 'retour ' + cls; retourBox.textContent = t; };
+  const noteAu = ply => (ligne.notes && ligne.notes[ply]) || '';
+  async function jeuAdverse() {
+    while (k < n && P.moves[k].color !== moi) {
+      msg('L’adversaire joue…'); pl.bloquer(true); await new Promise(r => setTimeout(r, 650));
+      const m = P.moves[k]; k++; pl.set(P.fens[k], { dernier: m, anime: true });
+      const nt = noteAu(k); if (nt) msg(`${numCoup(k)} ${m.san} : ${nt}`);
+    }
+    if (k >= n) return terminer();
+    maj(); pl.bloquer(false); busy = false;
+    const att = retourBox.textContent.includes(' : ') ? '' : 'À toi : trouve le coup de la ligne.'; if (att) msg(att);
+  }
+  async function terminer() {
+    fini = true; pl.bloquer(true); sauverProg(cours.id, li, erreurs);
+    retourBox.className = 'retour ' + (erreurs === 0 ? 'bon' : ''); retourBox.innerHTML = '';
+    retourBox.append(h('b', {}, erreurs === 0 ? 'Ligne réussie sans faute.' : `Ligne terminée avec ${erreurs} erreur${erreurs > 1 ? 's' : ''}.`),
+      h('p', {}, erreurs === 0 ? 'Rejoue-la dans quelques jours pour bien la fixer.' : 'Refais-la : la deuxième fois, tu retiens beaucoup mieux.'));
+    actions.innerHTML = ''; actions.append(h('button', { class: 'btn', onclick: () => entrainerLigne(ov, cours, lignes, li, retour) }, 'Recommencer'), h('button', { class: 'btn discret', onclick: retour }, 'Retour au cours'));
+  }
+  async function onMove(m) {
+    if (fini || busy) return; busy = true; pl.bloquer(true);
+    const attendu = P.moves[k], bon = m.uci === uci(attendu);
+    if (bon) {
+      k++; pl.set(P.fens[k], { dernier: attendu, anime: true });
+      const nt = noteAu(k); msg(`Bon coup. ${nt || ''}`.trim(), 'bon');
+      await new Promise(r => setTimeout(r, 900));
+      return jeuAdverse();
+    }
+    erreurs++;
+    const fen = P.fens[k]; const apres = new Chess(fen); apres.move({ from: m.from, to: m.to, promotion: m.promotion });
+    pl.set(apres.fen(), { dernier: m, anime: true }); msg('Le moteur vérifie ton coup…');
+    let R = null; try { R = await profond(fen, m.uci); } catch {}
+    const mien = e => (moi === 'w' ? e : -e);
+    const valable = R && winPct(mien(R.ra.e)) >= winPct(mien(R.rb.e)) - 5;
+    retourBox.className = 'retour mauvais'; retourBox.innerHTML = '';
+    retourBox.append(h('b', {}, valable ? `${m.san} est un coup correct, mais ce n’est pas celui de la ligne étudiée.` : `${m.san} n’est pas le coup de la ligne, et il est moins bon.`));
+    if (R && !valable) retourBox.append(noeudExplication(explicationDe(R, fen, m.uci, 'tu'), { sansMeilleur: true, titre: `Pourquoi ${m.san} est moins bon` }));
+    retourBox.append(h('p', {}, `Le coup attendu était ${attendu.san}.${noteAu(k + 1) ? ' ' + noteAu(k + 1) : ''}`));
+    actions.innerHTML = '';
+    actions.append(h('button', { class: 'btn', onclick: () => { retourBox.className = 'retour'; retourBox.textContent = 'À toi : trouve le coup de la ligne.'; actions.innerHTML = ''; actions.append(btIndice, btVoir); pl.set(fen); pl.bloquer(false); busy = false; } }, 'Réessayer'), btVoir);
+  }
+  const btIndice = h('button', { class: 'btn discret', onclick: () => {
+    const a = P.moves[k]; indices++; const nom = { p: 'un pion', n: 'un cavalier', b: 'un fou', r: 'une tour', q: 'la dame', k: 'le roi' }[a.piece];
+    msg(indices === 1 ? `Indice : le coup se joue avec ${nom}.` : `Indice : la pièce part de la case ${a.from}.`);
+  } }, 'Indice');
+  const btVoir = h('button', { class: 'btn discret', onclick: () => {
+    if (fini || (busy && retourBox.className.indexOf('mauvais') < 0)) return;
+    erreurs++; const a = P.moves[k], fen = P.fens[k]; pl.set(fen, { fleches: [[uci(a), C('--fl-mieux')]] }); pl.bloquer(true);
+    msg(`Le coup de la ligne est ${a.san}. ${noteAu(k + 1)}`.trim());
+    actions.innerHTML = ''; actions.append(h('button', { class: 'btn', onclick: () => { actions.innerHTML = ''; actions.append(btIndice, btVoir); pl.set(fen); busy = false; pl.bloquer(false); msg('À toi : trouve le coup de la ligne.'); } }, 'À moi de le jouer'));
+  } }, 'Voir le coup');
+  actions.append(btIndice, btVoir);
+  maj(); busy = true; await jeuAdverse();
 }
 
 function vueReglages() {
@@ -1248,6 +1448,28 @@ async function chargerExos() {
 const maintenant = () => Date.now() / 1000;
 const exosDus = () => (S.exos || []).filter(x => x.pr <= maintenant()).sort((a, b) => a.bt - b.bt || b.p - a.p);
 const exosMaitrises = () => (S.exos || []).filter(x => x.bt >= 4).length;
+const debutJour = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime() / 1000; };
+function vusAujourdhui() { const v = store.get('ec_exo_vus', null); return v && v.d === dateLocale() ? new Set(v.ids) : new Set(); }
+function noterVus(ids) { const s = vusAujourdhui(); ids.forEach(i => s.add(i)); store.set('ec_exo_vus', { d: dateLocale(), ids: [...s] }); }
+/* choisit n exercices variés : pas ceux déjà faits aujourd'hui, au plus 2 par partie, types mélangés */
+function selectionExos(n, parmiTous = false) {
+  const vus = vusAujourdhui(), dj = debutJour();
+  const base = parmiTous ? (S.exos || []) : exosDus();
+  const frais = base.filter(x => !vus.has(x.id) && !(x.dr >= dj));
+  const pool = frais.length >= n ? frais : frais.concat(base.filter(x => !frais.includes(x)));
+  const score = x => (x.ok + x.ko === 0 ? 0 : x.ko > x.ok ? 0.8 : 1.6) + Math.random() * 1.4;
+  const tri = pool.slice().sort((a, b) => score(a) - score(b));
+  const res = [], parPartie = {}, parType = {};
+  for (const passe of [1, 2]) for (const x of tri) {
+    if (res.length >= n) break; if (res.includes(x)) continue;
+    if ((parPartie[x.u] || 0) >= 2) continue;
+    if (passe === 1 && (parType[x.ty] || 0) >= Math.ceil(n / 2)) continue;
+    res.push(x); parPartie[x.u] = (parPartie[x.u] || 0) + 1; parType[x.ty] = (parType[x.ty] || 0) + 1;
+  }
+  for (const x of tri) { if (res.length >= n) break; if (!res.includes(x)) res.push(x); }
+  noterVus(res.map(x => x.id));
+  return res;
+}
 
 /* ----- plan du jour et série ----- */
 function etatPlan() {
@@ -1444,8 +1666,8 @@ async function vueEntrainer() {
     if (!tous.length) bloc.append(h('p', { class: 'ana-msg' }, 'Tes exercices sont créés à partir des gaffes repérées dans tes parties analysées. Ouvre une partie et touche « Analyser », ou laisse l’analyse automatique tourner : les premiers exercices apparaissent ici.'));
     else {
       bloc.append(h('div', { class: 'lignes' }, ligneKV('Exercices au total', null, String(tous.length)), ligneKV('À revoir maintenant', null, String(dus.length)), ligneKV('Maîtrisés (réussis plusieurs fois)', null, String(exosMaitrises()))));
-      const dep = dus.length ? dus.slice(0, 20) : tous.slice().sort(() => Math.random() - 0.5).slice(0, 5);
-      bloc.append(h('button', { class: 'btn discret', style: 'margin-top:14px', onclick: () => seanceExos(dep, async () => { await chargerExos(); rendu(); }) }, dus.length ? `M’entraîner librement (${Math.min(20, dus.length)})` : 'Réviser quand même 5 positions'));
+      const dep = () => (dus.length ? selectionExos(10) : selectionExos(5, true));
+      bloc.append(h('button', { class: 'btn discret', style: 'margin-top:14px', onclick: () => seanceExos(dep(), async () => { await chargerExos(); rendu(); }) }, dus.length ? `M’entraîner librement (${Math.min(10, dus.length)})` : 'Réviser quand même 5 positions'));
       const types = {}; tous.forEach(x => { types[x.ty] = (types[x.ty] || 0) + 1; });
       const premier = Object.keys(types).sort((a, b) => types[b] - types[a])[0];
       if (premier) bloc.append(h('p', { class: 'ana-msg', style: 'margin-top:12px' }, `Tes exercices portent surtout sur : ${TYPES[premier].nom.toLowerCase()}. ${TYPES[premier].conseil}`));
@@ -1462,7 +1684,7 @@ async function vueEntrainer() {
 function faireEtape(k, suite) {
   const fin = () => { marquerFait(k); if (S.tab === 'entrainer') vueEntrainer(); suite && suite(); };
   if (k === 'exos') {
-    const dus = exosDus().slice(0, 5); const liste = dus.length ? dus : (S.exos || []).slice().sort(() => Math.random() - 0.5).slice(0, 5);
+    const liste = exosDus().length ? selectionExos(5) : selectionExos(5, true);
     if (!liste.length) return fin();
     seanceExos(liste, async res => { await chargerExos(); if (res.length) fin(); else if (S.tab === 'entrainer') vueEntrainer(); });
   } else if (k === 'finale') seanceFinale(drillDuJour(), ok => { if (ok) fin(); else if (S.tab === 'entrainer') vueEntrainer(); });
