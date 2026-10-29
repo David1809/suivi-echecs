@@ -542,9 +542,9 @@ function vueReglages() {
   const btn = h('button', { class: 'btn', onclick: () => synchroniser(btn, etat) }, 'Synchroniser maintenant');
   if (S.syncEnCours) { btn.disabled = true; btn.textContent = 'Synchronisation en cours'; }
   v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Mettre à jour mes parties'), h('p', {}, 'Une mise à jour automatique a lieu chaque nuit. Utilise ce bouton pour récupérer tes dernières parties tout de suite (compte environ une minute).'), btn, etat));
-  const selNiv = h('select', { class: 'champ sel', 'aria-label': 'Niveau d’analyse par défaut', onchange: () => { S.niveau = selNiv.value === 'auto' ? null : +selNiv.value; store.set('ec_niv', S.niveau); vueReglages(); } },
+  const selNiv = h('select', { class: 'champ menu', 'aria-label': 'Niveau d’analyse par défaut', onchange: () => { S.niveau = selNiv.value === 'auto' ? null : +selNiv.value; store.set('ec_niv', S.niveau); vueReglages(); } },
     h('option', { value: 'auto', selected: !S.niveau }, 'Mon niveau (automatique)'), NIV_ELO.map(e => h('option', { value: e, selected: S.niveau === e }, `${e} elo`)));
-  const selNb = h('select', { class: 'champ sel', 'aria-label': 'Parties à analyser automatiquement', onchange: () => { S.nAuto = +selNb.value; store.set('ec_nauto', S.nAuto); autoAnalyse(); majStatut(); } },
+  const selNb = h('select', { class: 'champ menu', 'aria-label': 'Parties à analyser automatiquement', onchange: () => { S.nAuto = +selNb.value; store.set('ec_nauto', S.nAuto); autoAnalyse(); majStatut(); } },
     [30, 100, 300, 1000].map(n => h('option', { value: n, selected: S.nAuto === n }, `Mes ${n} dernières parties`)));
   v.append(h('div', { class: 'reglage' }, h('h3', {}, 'Analyse des parties'),
     h('p', {}, 'Niveau d’analyse : le moteur regarde aussi loin qu’un joueur de ce niveau. Par défaut, c’est ton classement du moment, parce qu’une analyse de niveau 2500 ne t’aiderait pas.'), selNiv,
@@ -1142,7 +1142,7 @@ async function ouvrirPartie(g, opts = {}) {
     panneau.innerHTML = '';
     if (etat === 'inconnu') { panneau.append(h('div', { class: 'ana-msg' }, 'Recherche d’une analyse existante…')); return; }
     if (etat === 'aucune') {
-      const sel = h('select', { class: 'champ sel', 'aria-label': 'Niveau d’analyse', onchange: () => { nvSel = +sel.value; rendrePanneau(); } },
+      const sel = h('select', { class: 'champ menu', 'aria-label': 'Niveau d’analyse', onchange: () => { nvSel = +sel.value; rendrePanneau(); } },
         NIV_ELO.map(e => h('option', { value: e, selected: e === nvSel }, `${e} elo` + (e === eloProche(g.e) ? ' (ton niveau)' : ''))));
       panneau.append(h('h3', {}, 'Analyse de la partie'),
         h('p', { class: 'ana-msg' }, 'Stockfish repère les gaffes et le moment où la partie bascule. Il regarde aussi loin qu’un joueur du niveau choisi : les fautes que seul un joueur bien plus fort aurait vues ne sont pas comptées.'),
