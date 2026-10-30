@@ -2,7 +2,7 @@ import { Chess } from 'chess.js';
 import { SPRITE } from './pieces.js';
 import { expliquerCoup, pourquoiMeilleur } from './expliquer.js';
 import { COURS } from './ouvertures-data.js';
-import { analyserOuverture } from './ouv-perso.js';
+import { analyserOuverture, qualiteDebut } from './ouv-perso.js';
 import { classer, departsDe, nivMax, nettoyerCoups, libelle, sansDe } from './positions.js';
 import { analyserDebut, VERSION_OP, METHODE } from './ouv-moteur.js';
 import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval, winPct } from './analyse.js';
@@ -548,7 +548,7 @@ async function opBoucle() {
   if (S.opRun || !S.code) return; S.opRun = true;
   try {
     if (S.mv.n !== PARTIES.length) await chargerMv();
-    const q = opAFaire(); S.opEtat = { fait: 0, total: q.length, t0: performance.now(), ms: 0 };
+    const q = opAFaire(), pend = new Set(); S.opEtat = { fait: 0, total: q.length, t0: performance.now(), ms: 0 };
     while (q.length && S.opAuto && S.code) {
       if (document.hidden) { await new Promise(r => document.addEventListener('visibilitychange', r, { once: true })); continue; }
       if (S.manuel > 0 || S.migrRun) { await sleep(1500); continue; }
@@ -558,18 +558,22 @@ async function opBoucle() {
         const op = await exclusif(async () => { await getMoteur().nouvellePartie(); return analyserDebut({ tokens, moi, k, evalFn: evalOp, typeFn: typeFaute, annule: () => S.manuel > 0 || !S.opAuto || !S.code }); });
         if (!op) { if (S.manuel > 0 || !S.opAuto) q.unshift(g); else S.opErr[g.u] = 1; continue; }
         op.t = Math.round(performance.now() - t0);
-        await opSauver(g, op); S.opx[g.u] = op; S.opEtat.fait++; S.opEtat.ms += op.t;
+        S.opx[g.u] = op; S.opEtat.fait++; S.opEtat.ms += op.t;
+        /* l'enregistrement se fait en parallèle du calcul suivant (au plus 4 en même temps) : le moteur n'attend pas le réseau */
+        const pr = opSauver(g, op).catch(() => { delete S.opx[g.u]; S.opErr[g.u] = 1; S.opEtat.fait--; }).finally(() => pend.delete(pr)); pend.add(pr);
+        if (pend.size >= 4) await Promise.race(pend);
         if (S.opEtat.fait % 20 === 0) store.set('ec_opx', S.opx);
         if (S.opEtat.fait % 5 === 0 && S.tab === 'ouvertures') majBandeau();
       } catch (e) { S.opErr[g.u] = 1; if (/démarrer/.test(e.message || '')) break; }
     }
+    await Promise.all(pend);
   } finally { store.set('ec_opx', S.opx); S.opRun = false; if (S.opEtat) S.opEtat.fin = Date.now(); if (S.tab === 'ouvertures') majBandeau(); }
 }
 const clDe = g => S.cl.d[g.u] || null;
 const partiesDuCours = c => PARTIES.filter(g => { const k = clDe(g); return k && k.a.some(x => x[0] === c.id); });
 /* analyse du début de partie : la nouvelle (deux passes, toutes les parties) l'emporte sur l'ancienne analyse complète à faible profondeur */
 const opValide = u => { const o = S.opx[u]; return !!(o && o.v === VERSION_OP && o.m === METHODE); };
-const opDe = g => { const o = S.opx[g.u]; if (o && o.v === VERSION_OP) return { of: o.of, ofa: o.ofa, e5: o.e5, e10: o.e10, e15: o.e15, f1: o.f1, fa1: o.fa1, nv: o.nv, deux: 1 }; const a = S.ana[g.u]; return a && a.op ? a.op : null; };
+const opDe = g => { const o = S.opx[g.u]; if (o && o.v === VERSION_OP) return { of: o.of, ofa: o.ofa, e5: o.e5, e10: o.e10, e15: o.e15, f1: o.f1, fa1: o.fa1, nv: o.nv, n: o.n, deux: 1 }; const a = S.ana[g.u]; return a && a.op ? a.op : null; };
 function anaVue(ps) { const m = {}; for (const g of ps) { const op = opDe(g), a = S.ana[g.u]; if (op || a) m[g.u] = { ...(a || {}), op: op || undefined }; } return m; }
 const persoDe = (c, ps) => { ps = ps || partiesDuCours(c); return analyserOuverture(c, ps, S.mv.d, anaVue(ps)); };
 const texteNote = n => (n && typeof n === 'object' ? n.t : n) || '';
@@ -735,6 +739,35 @@ function carteExemple(ex, cours, versPartie) {
 }
 const vide = t => h('p', { class: 'ana-msg' }, t);
 
+
+/* fiabilité d'un chiffre : nombre de cas, parties analysées, couverture (jamais un score de confiance inventé) */
+const pcFr = (a, b) => { if (!b) return '—'; const v = 100 * a / b; return (v === 100 || v === 0 || v >= 10 ? Math.round(v).toString() : v.toFixed(1)).replace('.', ',') + ' %'; };
+const kv = (k, v, sous) => h('div', { class: 'kv' }, h('div', { class: 'kv-k' }, k), h('div', { class: 'kv-v' }, v), sous ? h('div', { class: 'kv-s' }, sous) : null);
+function blocQualite(X) {
+  const { ps, perso, st } = X, q = qualiteDebut(ps, opDe);
+  const b = h('div', { class: 'bloc-cours' }, h('h3', {}, 'Qualité des 15 premiers coups'), h('div', { class: 'src-ligne' }, srcSf(q.n, st.n)));
+  if (!q.n) { b.append(vide(S.opRun ? 'L’analyse des ouvertures est en cours : ces chiffres apparaîtront au fil du calcul.' : 'Aucune partie analysée pour l’instant.')); return b; }
+  b.append(h('p', { class: 'ana-msg', style: 'margin:0 0 6px' }, `Calculé sur ${q.n} parties analysées sur ${st.n} (couverture ${pcFr(q.n, st.n)}). Les parties de moins de 15 coups sont analysées jusqu’à leur fin.`));
+  const dp = (a, n) => `${a} sur ${n} (${pcFr(a, n)})`;
+  b.append(kv('Parties avec une erreur grave (erreur ou gaffe)', `Toi : ${dp(q.partiesGraveMoi, q.n)}`, `Adversaires : ${dp(q.partiesGraveAdv, q.n)}`));
+  b.append(kv('Parties sans aucune faute de ta part', dp(q.sansFauteMoi, q.n)));
+  const sf = L => (L.coups ? pcFr(L.coups - L.g - L.e - L.i, L.coups) : '—');
+  b.append(kv('Coups sans faute', `Toi : ${sf(q.moi)} sur ${q.moi.coups} coups`, `Adversaires : ${sf(q.adv)} sur ${q.adv.coups} coups`));
+  b.append(kv('Gaffes · erreurs · imprécisions', `Toi : ${q.moi.g} · ${q.moi.e} · ${q.moi.i}`, `Adversaires : ${q.adv.g} · ${q.adv.e} · ${q.adv.i}`));
+  const pm = (p, nom) => p.n ? `${nom} : coup ${p.mediane} en médiane (${p.n} parties ; jusqu’au 5e coup : ${p.t1}, du 6e au 10e : ${p.t2}, du 11e au 15e : ${p.t3}) ; perte moyenne ${p.perte} points de chances de gagner` : `${nom} : aucune erreur grave`;
+  b.append(kv('Première erreur significative', pm(q.premMoi, 'Toi'), pm(q.premAdv, 'Adversaires')));
+  b.append(kv('Ta position selon Stockfish (chances de gagner, ton point de vue)', `Après 5 coups : ${q.p5.moy} % · après 10 : ${q.p10.moy} % · après 15 : ${q.p15.moy} %`, `Moyennes sur ${q.p5.n}, ${q.p10.n} et ${q.p15.n} parties. Après 10 coups : ${q.bandes10.bas} parties sous 40 %, ${q.bandes10.milieu} entre 40 et 60 %, ${q.bandes10.haut} au-dessus de 60 % (repères d’affichage).`));
+  if (perso.perdues) { const p = perso.perdues; b.append(kv('Défaites et ouverture', `Sur ${p.n} défaites analysées, ${p.correcte} avaient au moins 45 % de chances de gagner après 10 coups`, 'La partie s’est alors perdue plus tard : l’ouverture n’est pas en cause à elle seule.')); }
+  if (perso.types && perso.types.tact + perso.types.strat) b.append(kv('Nature de tes erreurs graves', `${perso.types.tact} tactique${perso.types.tact > 1 ? 's' : ''} · ${perso.types.strat} positionnelle${perso.types.strat > 1 ? 's' : ''}`, 'Classement indicatif : pièce en prise, menace ou capture non vue, contre coup qui dégrade la position.'));
+  if (q.evol.length >= 2) b.append(h('p', { class: 'ana-msg', style: 'margin:8px 0 2px' }, 'Évolution, par tranche de 10 parties (anciennes à récentes) : % de parties avec une erreur grave · position moyenne après 10 coups'), h('div', { class: 'evol-txt' }, q.evol.map(e => h('span', {}, `${e.grave} % · ${e.e10} %`))));
+  b.append(h('p', { class: 'note-seuil' }, 'Méthode : Stockfish en deux passes (profondeur 10, puis 14 sur les coups douteux). Sur 40 parties de test, elle retrouve environ 88 % des erreurs et gaffes d’une analyse plus profonde. Un coup peut être mal classé dans une position très tactique.'));
+  return b;
+}
+function blocHabitudes(X) {
+  const { perso } = X; if (!perso.habituels || !perso.habituels.length) return null;
+  return h('div', { class: 'bloc-cours' }, h('h3', {}, 'Les coups que tu joues presque toujours'), h('div', { class: 'src-ligne' }, srcToutes(X.st.n)),
+    h('ul', { class: 'puces' }, perso.habituels.slice(0, 6).map(x => h('li', {}, `${libelle(x.apres.concat(x.san), x.ply - x.apres.length)} : ${x.part} % des cas (${x.n} sur ${x.N})` + (x.alt.length && x.part < 85 ? `, sinon ${x.alt.map(a => a.san).join(' ou ')}` : '')))));
+}
 /* ----- onglet Résultats : tout est calculé sur toutes tes parties, sauf mention « Stockfish » ----- */
 function panResultats(X) {
   const { cours, ps, perso, st } = X, P = h('div', { class: 'panneau' });
@@ -770,6 +803,8 @@ function panResultats(X) {
     bv.append(h('p', { class: 'note-seuil' }, 'Repères d’affichage, pas des statistiques de confiance : « À surveiller » = au moins 5 parties et 55 % de défaites ou plus ; « Ça marche bien » = au moins 5 parties et 60 % de victoires ou plus.'));
   }
   P.append(bv);
+  const hb = blocHabitudes(X); if (hb) P.append(hb);
+  P.append(blocQualite(X));
   /* évolution */
   const be = h('div', { class: 'bloc-cours' }, h('h3', {}, 'Évolution'), h('div', { class: 'src-ligne' }, srcToutes(st.n)));
   if (perso.evol.length >= 2) be.append(h('p', { class: 'ana-msg', style: 'margin:6px 0 4px' }, 'Victoires par tranche de 10 parties, de la plus ancienne à la plus récente :'), h('div', { class: 'evol' }, perso.evol.map(e => h('div', {}, h('i', { style: `height:${Math.max(6, e.vic)}%` }), h('small', {}, e.vic + ' %')))));
@@ -790,7 +825,8 @@ function panAmeliorer(X) {
   const { cours, ps, perso } = X, P = h('div', { class: 'panneau' });
   if (!perso.n) { P.append(vide('Aucune partie dans cette ouverture : rien à analyser pour l’instant.')); return P; }
   const recos = perso.recos.filter(r => !r.ok), insuf = perso.nAna < 6;
-  const constat = r => h('div', { class: 'constat' }, h('h4', {}, r.titre), h('p', {}, r.texte), r.conseil && h('p', { class: 'reflexe' }, h('b', {}, 'Réflexe : '), r.conseil),
+  const fiab = r => { if (!r.ev) return null; const e = r.ev; const t = e.src === 'toutes' ? `${e.cas} sur ${e.sur} parties (${pcFr(e.cas, e.sur)}) parmi tes ${perso.n} parties.` : e.occ ? `${e.cas} cas sur ${e.sur} occurrences, dans ${perso.nAna} parties analysées sur ${perso.n} (couverture ${pcFr(perso.nAna, perso.n)}).` : `${e.cas} sur ${e.sur} parties analysées (${pcFr(e.cas, e.sur)}) ; couverture : ${perso.nAna} parties sur ${perso.n} (${pcFr(perso.nAna, perso.n)}).`; return h('p', { class: 'fiab' }, h('b', {}, 'Sur quoi ça repose : '), t); };
+  const constat = r => h('div', { class: 'constat' }, h('h4', {}, r.titre), h('p', {}, r.texte), fiab(r), r.conseil && h('p', { class: 'reflexe' }, h('b', {}, 'Réflexe : '), r.conseil),
     r.ex && r.ex.length ? h('details', { class: 'voir' }, h('summary', {}, r.ex.length > 1 ? 'Voir des positions de tes parties' : 'Voir la position dans ta partie'), ...r.ex.slice(0, 2).map(x => carteExemple(x, cours, X.versPartie))) : null);
   const toutes = recos.filter(r => /^(roque|dame)$/.test(r.id)), sf = recos.filter(r => !/^(roque|dame)$/.test(r.id));
   const s1 = h('div', { class: 'bloc-cours premier' }, h('h3', {}, 'Habitudes de jeu'), h('div', { class: 'src-ligne' }, srcToutes(perso.n)),

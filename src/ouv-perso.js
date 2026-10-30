@@ -121,7 +121,7 @@ export function analyserOuverture(cours, parties, mv, ana) {
       if (sans.length / el.length >= 0.25 && sans.length >= 3) {
         const pa = avec.length >= 5 ? pc(avec.filter(x => x.g.issue === 'g').length, avec.length) : null, ps = sans.length >= 5 ? pc(sans.filter(x => x.g.issue === 'g').length, sans.length) : null;
         const ex = sans.slice().sort((x, y) => y.g.t - x.g.t)[0];
-        R.push({ id: 'roque', titre: 'Tu roques trop tard', texte: `Dans ${sans.length} parties sur ${el.length} (${pc(sans.length, el.length)} %), ton roi est encore au centre après dix coups.` + (pa != null && ps != null && Math.abs(pa - ps) >= 10 ? ` Tu gagnes ${pa} % de tes parties quand tu roques avant le 10e coup, contre ${ps} % sinon.` : ''), conseil: 'Vise le roque avant ton 8e ou 9e coup : développe cavalier et fou, puis roque, avant de lancer une attaque.', ex: [{ g: ex.g, ply: Math.min(ex.m.length, moi ? 20 : 19), info: 'Position après ton 10e coup : ton roi est toujours au centre.', apres: true }] });
+        R.push({ id: 'roque', ev: { cas: sans.length, sur: el.length, src: 'toutes' }, titre: 'Tu roques trop tard', texte: `Dans ${sans.length} parties sur ${el.length} (${pc(sans.length, el.length)} %), ton roi est encore au centre après dix coups.` + (pa != null && ps != null && Math.abs(pa - ps) >= 10 ? ` Tu gagnes ${pa} % de tes parties quand tu roques avant le 10e coup, contre ${ps} % sinon.` : ''), conseil: 'Vise le roque avant ton 8e ou 9e coup : développe cavalier et fou, puis roque, avant de lancer une attaque.', ex: [{ g: ex.g, ply: Math.min(ex.m.length, moi ? 20 : 19), info: 'Position après ton 10e coup : ton roi est toujours au centre.', apres: true }] });
       } else if (el.length >= 8) R.push({ id: 'roque-ok', ok: true, titre: 'Tu roques à temps', texte: `Tu as roqué avant le 10e coup dans ${el.length - sans.length} parties sur ${el.length}.` });
     } else insuffisant.push('le roque (moins de 8 parties de plus de 12 coups)');
   }
@@ -133,14 +133,14 @@ export function analyserOuverture(cours, parties, mv, ana) {
       if (tt.length >= 3 && tt.length / el.length >= 0.2) {
         const ex = tt.slice().sort((x, y) => y.g.t - x.g.t)[0], k = tot(ex);
         const pa = pc(tt.filter(x => x.g.issue === 'g').length, tt.length), reste = el.filter(x => tot(x) < 0), pr = reste.length >= 5 ? pc(reste.filter(x => x.g.issue === 'g').length, reste.length) : null;
-        R.push({ id: 'dame', titre: 'Tu sors ta dame trop tôt', texte: `Dans ${tt.length} parties sur ${el.length}, ta dame bouge avant ton 9e coup.` + (pr != null && Math.abs(pa - pr) >= 10 ? ` Tu gagnes ${pa} % de ces parties, contre ${pr} % quand elle reste derrière.` : ''), conseil: 'Tant que tes cavaliers et tes fous ne sont pas sortis, la dame reste à la maison : l’adversaire gagne des tempos en l’attaquant.', ex: [{ g: ex.g, ply: k + 1, san: ex.m[k], info: 'Ici ta dame sort tôt.' }] });
+        R.push({ id: 'dame', ev: { cas: tt.length, sur: el.length, src: 'toutes' }, titre: 'Tu sors ta dame trop tôt', texte: `Dans ${tt.length} parties sur ${el.length}, ta dame bouge avant ton 9e coup.` + (pr != null && Math.abs(pa - pr) >= 10 ? ` Tu gagnes ${pa} % de ces parties, contre ${pr} % quand elle reste derrière.` : ''), conseil: 'Tant que tes cavaliers et tes fous ne sont pas sortis, la dame reste à la maison : l’adversaire gagne des tempos en l’attaquant.', ex: [{ g: ex.g, ply: k + 1, san: ex.m[k], info: 'Ici ta dame sort tôt.' }] });
       }
     } else insuffisant.push('la sortie de la dame (moins de 8 parties)');
   }
   // c) mêmes erreurs, mêmes positions
   if (AN.length >= 6) {
-    out.recurrentes.slice(0, 3).forEach((r, k) => R.push({ id: 'rec' + k, titre: `Tu rejoues ${r.san} après ${libelle(r.avant.slice(-2), r.avant.length - Math.min(2, r.avant.length) + 1)}`, texte: `Après ${libelle(r.avant.slice(Math.max(0, r.avant.length - 3)), Math.max(1, r.avant.length - Math.min(3, r.avant.length) + 1))}, tu as joué ${r.san} dans ${r.n} parties (perte moyenne : ${r.perte} points de chances de gagner).` + (r.best ? ` Le moteur préférait ${r.best}.` : ''), conseil: 'Dans cette position, avant de rejouer ce coup, cherche ce que l’adversaire menace et regarde le coup du moteur.', ex: r.parties.slice(0, 2).map(g => ({ g, ply: r.ply, san: r.san, best: r.best, perte: r.perte })) }));
-    out.reponses.forEach((r, k) => R.push({ id: 'rep' + k, titre: `Tu réponds mal à ${r.opp}`, texte: `Quand l’adversaire joue ${r.opp}, ton coup suivant est une erreur ou une gaffe dans ${r.F} parties sur ${r.T} (${pc(r.F, r.T)} %).`, conseil: 'Avant de répondre, demande-toi ce que ce coup attaque ou prépare, puis cherche la réponse la plus simple.', ex: [{ g: r.ex.g, ply: r.ex.ply, san: r.ex.san, best: r.ex.best, perte: r.ex.perte }] }));
+    out.recurrentes.slice(0, 3).forEach((r, k) => R.push({ id: 'rec' + k, ev: { cas: r.n, sur: AN.length, src: 'sf' }, titre: `Tu rejoues ${r.san} après ${libelle(r.avant.slice(-2), r.avant.length - Math.min(2, r.avant.length) + 1)}`, texte: `Après ${libelle(r.avant.slice(Math.max(0, r.avant.length - 3)), Math.max(1, r.avant.length - Math.min(3, r.avant.length) + 1))}, tu as joué ${r.san} dans ${r.n} parties (perte moyenne : ${r.perte} points de chances de gagner).` + (r.best ? ` Le moteur préférait ${r.best}.` : ''), conseil: 'Dans cette position, avant de rejouer ce coup, cherche ce que l’adversaire menace et regarde le coup du moteur.', ex: r.parties.slice(0, 2).map(g => ({ g, ply: r.ply, san: r.san, best: r.best, perte: r.perte })) }));
+    out.reponses.forEach((r, k) => R.push({ id: 'rep' + k, ev: { cas: r.F, sur: r.T, src: 'sf', occ: true }, titre: `Tu réponds mal à ${r.opp}`, texte: `Quand l’adversaire joue ${r.opp}, ton coup suivant est une erreur ou une gaffe dans ${r.F} parties sur ${r.T} (${pc(r.F, r.T)} %).`, conseil: 'Avant de répondre, demande-toi ce que ce coup attaque ou prépare, puis cherche la réponse la plus simple.', ex: [{ g: r.ex.g, ply: r.ex.ply, san: r.ex.san, best: r.ex.best, perte: r.ex.perte }] }));
   } else insuffisant.push('les erreurs récurrentes (il faut au moins 6 parties analysées de cette ouverture ; tu en as ' + AN.length + ')');
   // d) fautes précoces
   if (out.ouvertureFautes && out.ouvertureFautes.n >= 8) {
@@ -148,14 +148,14 @@ export function analyserOuverture(cours, parties, mv, ana) {
     if (gr / f.n >= 0.25) {
       const exs = AN.filter(x => gravesDe(x).length).sort((x, y) => y.g.t - x.g.t).slice(0, 1).map(x => { const z = gravesDe(x)[0]; return { g: x.g, ply: z[0], san: x.m[z[0] - 1], best: z[3], perte: z[2] }; });
       const t = out.types; const dom = t && t.tact + t.strat >= 3 ? (t.tact >= t.strat ? 'surtout des fautes tactiques (pièce laissée en prise, menace ou capture non vue)' : 'surtout des coups qui dégradent la position sans perte immédiate') : null;
-      R.push({ id: 'precoces', titre: 'Des erreurs graves dès l’ouverture', texte: `Dans ${gr} parties analysées sur ${f.n} (${pc(gr, f.n)} %), tu fais une erreur ou une gaffe avant le 15e coup` + (dom ? `, ${dom}.` : '.'), conseil: 'Dans les 15 premiers coups, vérifie à chaque coup : ce que l’adversaire vient de menacer, et si la pièce que tu déplaces reste protégée.', ex: exs });
+      R.push({ id: 'precoces', ev: { cas: gr, sur: f.n, src: 'sf' }, titre: 'Des erreurs graves dès l’ouverture', texte: `Dans ${gr} parties analysées sur ${f.n} (${pc(gr, f.n)} %), tu fais une erreur ou une gaffe avant le 15e coup` + (dom ? `, ${dom}.` : '.'), conseil: 'Dans les 15 premiers coups, vérifie à chaque coup : ce que l’adversaire vient de menacer, et si la pièce que tu déplaces reste protégée.', ex: exs });
     }
   }
   // e) avantage non converti
   { const av = AN.filter(x => x.a.op.e10 != null && x.a.op.e10 >= 58);
     if (av.length >= 5) {
       const rate = pc(av.filter(x => x.g.issue !== 'g').length, av.length);
-      if (rate >= 35) { const ex = av.filter(x => x.g.issue !== 'g').sort((x, y) => y.g.t - x.g.t)[0]; R.push({ id: 'avantage', titre: 'Tu sors de l’ouverture avec avantage, mais tu ne le convertis pas', texte: `Sur ${av.length} parties où le moteur te donnait un avantage après 10 coups, tu n’en as gagné que ${av.length - Math.round(rate * av.length / 100)}. L’ouverture n’est donc pas le problème : c’est la suite.`, conseil: 'Avec un avantage, échange les pièces, garde le roi à l’abri et évite les coups risqués.', ex: ex ? [{ g: ex.g, ply: Math.min(20, ex.m.length), info: `Position après 10 coups de chaque camp : le moteur te donnait ${ex.a.op.e10} % de chances de gagner.`, apres: true }] : [] }); }
+      if (rate >= 35) { const ex = av.filter(x => x.g.issue !== 'g').sort((x, y) => y.g.t - x.g.t)[0]; R.push({ id: 'avantage', ev: { cas: av.filter(x => x.g.issue !== 'g').length, sur: av.length, src: 'sf' }, titre: 'Tu sors de l’ouverture avec avantage, mais tu ne le convertis pas', texte: `Sur ${av.length} parties où le moteur te donnait un avantage après 10 coups, tu n’en as gagné que ${av.length - Math.round(rate * av.length / 100)}. L’ouverture n’est donc pas le problème : c’est la suite.`, conseil: 'Avec un avantage, échange les pièces, garde le roi à l’abri et évite les coups risqués.', ex: ex ? [{ g: ex.g, ply: Math.min(20, ex.m.length), info: `Position après 10 coups de chaque camp : le moteur te donnait ${ex.a.op.e10} % de chances de gagner.`, apres: true }] : [] }); }
     }
   }
   out.recos = R; out.insuffisant = insuffisant;
@@ -172,5 +172,27 @@ export function analyserOuverture(cours, parties, mv, ana) {
   if (pire) faibles.push(`Variante ${pire.lib} : ${pire.def} % de défaites sur ${pire.n} parties.`);
   out.synth = { fortes, faibles, pire, freq: R.find(r => /^rec|^precoces/.test(r.id)) || null, prio: R.find(r => !r.ok) || null,
     maitrise: { lignesTravaillees: null, partiesSansGrave: out.ouvertureFautes ? `${out.ouvertureFautes.aucune + out.ouvertureFautes.i} sur ${out.ouvertureFautes.n}` : null } };
+  return out;
+}
+
+/* ---- qualité des 15 premiers coups, mesurée par Stockfish (deux passes) sur les parties dont le début est analysé ---- */
+const med = a => { a = a.slice().sort((x, y) => x - y); return a.length ? a[Math.floor((a.length - 1) / 2)] : null; };
+export function qualiteDebut(parties, opDe) {
+  const A = parties.map(g => ({ g, o: opDe(g) })).filter(x => x.o && x.o.deux && x.o.n);
+  const out = { n: A.length, total: parties.length };
+  if (!A.length) return out;
+  const nMoi = x => (x.g.co === 'blancs' ? Math.ceil(x.o.n / 2) : Math.floor(x.o.n / 2)), nAdv = x => x.o.n - nMoi(x);
+  const cnt = (L, lst) => { for (const f of lst) L[f[1]]++; };
+  const moi = { coups: 0, g: 0, e: 0, i: 0 }, adv = { coups: 0, g: 0, e: 0, i: 0 };
+  for (const x of A) { moi.coups += nMoi(x); adv.coups += nAdv(x); cnt(moi, x.o.of || []); cnt(adv, x.o.ofa || []); }
+  const grave = lst => (lst || []).some(f => f[1] === 'g' || f[1] === 'e');
+  const premiere = (get, perteDe) => { const v = []; const pertes = []; for (const x of A) { const l = get(x); const f = (l || []).find(z => z[1] === 'g' || z[1] === 'e'); if (f) { v.push(Math.ceil(f[0] / 2)); pertes.push(f[2]); } } return { n: v.length, mediane: med(v), t1: v.filter(m => m <= 5).length, t2: v.filter(m => m > 5 && m <= 10).length, t3: v.filter(m => m > 10).length, perte: pertes.length ? Math.round(pertes.reduce((s, y) => s + y, 0) / pertes.length) : null }; };
+  const pos = k => { const v = A.map(x => x.o[k]).filter(e => e != null); return { n: v.length, moy: v.length ? Math.round(v.reduce((s, y) => s + y, 0) / v.length) : null, mediane: med(v) }; };
+  const e10 = A.map(x => x.o.e10).filter(e => e != null);
+  const tri = A.slice().sort((a, b) => a.g.t - b.g.t), evol = [];
+  for (let fin = tri.length; fin >= 5 && evol.length < 6; fin -= 10) { const bl = tri.slice(Math.max(0, fin - 10), fin); if (bl.length >= 5) { const v = bl.map(x => x.o.e10).filter(e => e != null); evol.unshift({ n: bl.length, grave: Math.round(100 * bl.filter(x => grave(x.o.of)).length / bl.length), e10: v.length ? Math.round(v.reduce((s, y) => s + y, 0) / v.length) : null }); } }
+  Object.assign(out, { moi, adv, partiesGraveMoi: A.filter(x => grave(x.o.of)).length, partiesGraveAdv: A.filter(x => grave(x.o.ofa)).length,
+    sansFauteMoi: A.filter(x => !(x.o.of || []).length).length, premMoi: premiere(x => x.o.of), premAdv: premiere(x => x.o.ofa),
+    p5: pos('e5'), p10: pos('e10'), p15: pos('e15'), bandes10: { bas: e10.filter(e => e < 40).length, milieu: e10.filter(e => e >= 40 && e <= 60).length, haut: e10.filter(e => e > 60).length, n: e10.length }, evol });
   return out;
 }
