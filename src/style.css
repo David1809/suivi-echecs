@@ -387,3 +387,82 @@ details.plie .bloc h2{display:none}
 .bandeau-donnees{margin:0 20px 14px;padding:12px 14px;border:1px solid var(--trait);border-radius:14px;background:var(--surface);font-size:14px;line-height:1.45;color:var(--doux)}
 .bandeau-donnees p{margin:0}.bandeau-donnees .perf{margin-top:6px;font-size:12.5px}.bandeau-donnees .btn{margin-top:8px}
 .cl-stat small+small{display:block;font-size:11.5px}
+
+/* ======== Refonte du module Ouvertures : liste compacte, fiche à 4 onglets ======== */
+/* liste */
+.ouv-barre{display:flex;flex-direction:column;gap:10px;padding:10px 20px 6px}
+.seg{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--brume)}
+.seg button{flex:1;min-height:44px;border-radius:10px;font-size:15px;color:var(--doux);font-variant-numeric:tabular-nums}
+.seg button[aria-selected=true]{background:var(--surface);color:var(--accent-fort);font-weight:600;box-shadow:0 1px 3px var(--nav-ombre)}
+.tri{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--doux)}
+.tri .menu{flex:1;width:auto;margin:0;padding:10px 40px 10px 14px;min-height:44px}
+.ouv-liste{margin-top:6px;border-top:1px solid var(--trait)}
+.ouv-rang{display:grid;grid-template-columns:1fr auto;column-gap:12px;row-gap:2px;width:100%;text-align:left;padding:10px 20px 10px;border-bottom:1px solid var(--trait);min-height:44px}
+.ouv-rang:active{background:var(--brume)}
+.or-nom{font-family:var(--titre);font-weight:600;font-size:16px;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.or-pct{font-family:var(--titre);font-weight:700;font-size:17px;text-align:right;font-variant-numeric:tabular-nums}
+.or-coups{font-size:13px;color:var(--doux)}
+.or-n{font-size:13px;color:var(--doux);text-align:right;font-variant-numeric:tabular-nums}
+.or-bas{grid-column:1/-1;display:flex;align-items:center;gap:12px;margin-top:5px}.or-barre{flex:1;min-width:70px}.or-bas .leg-res{flex:none;flex-wrap:nowrap;gap:10px;font-size:12px}
+.pile.fine{height:7px}
+.leg-res{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--doux);font-variant-numeric:tabular-nums}
+.leg-res span:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:currentColor}
+.leg-res .g:before{background:var(--bleu)}.leg-res .n:before{background:var(--nul)}.leg-res .p:before{background:var(--rose)}
+.alerte-ouv{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 20px 0;padding:10px 14px;border-radius:14px;background:var(--teinte);border:1px solid var(--teinte-bord);font-size:14px;line-height:1.4;color:var(--accent-fort)}
+details.plie.plat{margin:14px 20px 0}
+details.plie.plat summary{font-size:15.5px;padding:12px 16px;min-height:44px}
+details.plie.discret summary{font-weight:500;color:var(--doux);font-size:14.5px}
+.sans-partie{padding:4px 0 0}.sp-ligne{display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:11px 16px;border-bottom:1px solid var(--trait);text-align:left;min-height:44px}
+.sp-ligne b{font-size:15px}.sp-ligne small{color:var(--doux);font-size:12.5px}
+.donnees-ouv{padding:10px 4px 0;font-size:14px;color:var(--doux);line-height:1.5}.donnees-ouv p{margin:0 0 8px}.donnees-ouv .perf{font-size:12.5px}
+/* source des chiffres : plein = toutes les parties ; pointillé = parties analysées par Stockfish */
+.src{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;line-height:1.3}
+.src:before{content:"";width:8px;height:8px;border-radius:50%;flex:none}
+.src-toutes{background:var(--teinte);color:var(--accent-fort);border:1px solid var(--teinte-bord)}.src-toutes:before{background:var(--accent-fort)}
+.src-sf{background:transparent;color:var(--doux);border:1.5px dashed var(--doux)}.src-sf:before{background:linear-gradient(90deg,var(--doux) 50%,transparent 50%);border:1.5px solid var(--doux);box-sizing:border-box}
+.src-perso{background:var(--brume);color:var(--texte);border:1px solid var(--trait)}.src-perso:before{background:var(--texte)}
+.src.mini{font-size:10.5px;padding:1px 7px;gap:4px;vertical-align:middle}.src.mini:before{width:6px;height:6px}
+.src-ligne{margin:8px 0 6px}
+/* fiche */
+.fiche-vue{padding:2px 4px 4px}
+.fiche-nom{font-size:23px;line-height:1.15;letter-spacing:-.02em;margin:2px 0 2px}
+.fiche-coups{margin:0 0 8px;font-size:14px;color:var(--doux)}
+.fiche-bilan{display:flex;align-items:baseline;gap:8px;margin:2px 0 8px}.fiche-bilan b{font-family:var(--titre);font-size:34px;font-variant-numeric:tabular-nums}.fiche-bilan span{color:var(--doux);font-size:14px}
+.fiche-vue .leg-res{margin-top:8px;font-size:13px}
+.fiche-nav{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:4px;margin:8px -16px 0;padding:6px 10px 6px 6px;background:var(--fond);border-bottom:1px solid var(--trait)}
+.nav-retour{flex:none;width:44px;height:44px;display:grid;place-items:center;border-radius:12px;color:var(--accent-fort)}
+.nav-retour svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.tabs-fiche{flex:1;display:flex;gap:2px;min-width:0}
+.tabs-fiche button{flex:1 1 auto;min-width:0;min-height:44px;padding:0 4px;border-radius:12px;font-size:13px;font-weight:500;color:var(--doux);position:relative;white-space:nowrap}
+.tabs-fiche button[aria-selected=true]{color:var(--accent-fort);font-weight:700;background:var(--teinte)}
+.badge{font-style:normal;font-size:10.5px;font-weight:700;margin-left:3px;padding:0 5px;border-radius:99px;background:var(--accent);color:var(--sur-accent);vertical-align:2px}
+.fiche-panneau{padding-bottom:84px}
+.fiche-panneau .bloc-cours.premier{margin-top:16px}
+.fiche-cta{position:sticky;bottom:0;margin:0 -16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--fond) 72%,transparent);z-index:6;margin-top:-72px}
+.btn.cta{width:100%;min-height:52px;justify-content:center;flex-direction:column;gap:0;padding:8px 18px;box-shadow:0 4px 14px var(--nav-ombre)}
+.btn.cta small{font-size:12px;font-weight:500;opacity:.9;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cta-t{font-size:16px}
+.btn.petit{min-height:44px}
+/* contenus d'onglets */
+details.plan-det{border-top:1px solid var(--trait)}details.plan-det:last-of-type{border-bottom:1px solid var(--trait)}
+details.plan-det summary{list-style:none;cursor:pointer;padding:13px 28px 13px 0;font-weight:600;font-size:15.5px;position:relative;min-height:44px}
+details.plan-det summary::-webkit-details-marker{display:none}
+details.plan-det summary:after{content:"";position:absolute;right:6px;top:50%;width:8px;height:8px;border-right:2px solid var(--doux);border-bottom:2px solid var(--doux);transform:translateY(-70%) rotate(45deg);transition:transform .2s}
+details.plan-det[open] summary:after{transform:translateY(-30%) rotate(-135deg)}
+.plan-corps{padding:0 0 12px}.plan-corps p{margin:4px 0;font-size:15px;line-height:1.5}
+.var-rang,.ligne-rang{padding:12px 0;border-top:1px solid var(--trait)}.var-rang:first-of-type,.ligne-rang:first-of-type{border-top:0}
+.vr-h,.lr-h{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:16px}.vr-m,.lr-m{margin:4px 0 6px;font-size:14px;line-height:1.45;color:var(--doux)}
+.vr-sf{margin:6px 0 8px;font-size:13px;color:var(--doux)}.var-rang .btn{margin-top:8px}
+.lr-act{display:flex;gap:8px;flex-wrap:wrap}
+.note-seuil{margin:12px 0 0;font-size:12.5px;line-height:1.45;color:var(--doux)}
+.fait{margin:6px 0;font-size:15px;line-height:1.45}.fait b{font-size:16px}
+.constat{padding:14px 0;border-top:1px solid var(--trait)}.constat:first-of-type{border-top:0}
+.constat h4{margin:0 0 4px;font-size:16px}.constat p{margin:4px 0;font-size:15px;line-height:1.5}.reflexe b{color:var(--accent-fort)}
+details.voir{margin-top:8px}details.voir summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border-radius:99px;background:var(--teinte);color:var(--accent-fort);font-weight:600;font-size:14.5px}
+details.voir summary::-webkit-details-marker{display:none}
+details.voir .ex-carte{margin:10px 0 4px;padding:0;border:0;background:none}
+details.plat-det{margin-top:6px}details.plat-det summary{list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--accent-fort);font-weight:600;font-size:14.5px}
+details.plat-det summary::-webkit-details-marker{display:none}
+ul.puces.compact li{margin:3px 0;font-size:14.5px}
+.in.fiche{min-height:100%;display:flex;flex-direction:column}.in.fiche .fiche-panneau{flex:1}
+.src-ligne.duo{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}.fiche-vue .pile{margin-top:2px}
+details.plat-det summary:after{content:'';width:8px;height:8px;margin-left:8px;border-right:2px solid var(--accent-fort);border-bottom:2px solid var(--accent-fort);transform:rotate(45deg) translateY(-2px);transition:transform .2s}details.plat-det[open] summary:after{transform:rotate(-135deg)}

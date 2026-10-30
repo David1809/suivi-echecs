@@ -163,10 +163,10 @@ export function analyserOuverture(cours, parties, mv, ana) {
   /* ---- 6. synthèse (uniquement ce qui est établi) ---- */
   const fortes = [], faibles = [];
   const mieux = out.variantes.filter(v => v.solide).sort((a, b2) => b2.vic - a.vic).slice(0, 1);
-  mieux.forEach(v => fortes.push(`Variante ${v.lib} : ${v.vic} % de victoires sur ${v.n} parties.`));
-  if (out.sortie && out.sortie.moy >= 52) fortes.push(`Tu sors de l’ouverture avec ${out.sortie.moy} % de chances de gagner en moyenne.`);
-  if (R.some(r => r.id === 'roque-ok')) fortes.push('Tu roques à temps.');
-  if (out.ouvertureFautes && out.ouvertureFautes.n >= 8 && out.ouvertureFautes.g + out.ouvertureFautes.e <= out.ouvertureFautes.n * 0.1) fortes.push('Très peu d’erreurs graves avant le 15e coup.');
+  mieux.forEach(v => fortes.push({ t: `Variante ${v.lib} : ${v.vic} % de victoires sur ${v.n} parties.`, s: 'toutes' }));
+  if (out.sortie && out.sortie.moy >= 52) fortes.push({ t: `Tu sors de l’ouverture avec ${out.sortie.moy} % de chances de gagner en moyenne.`, s: 'sf' });
+  if (R.some(r => r.id === 'roque-ok')) fortes.push({ t: 'Tu roques à temps.', s: 'toutes' });
+  if (out.ouvertureFautes && out.ouvertureFautes.n >= 8 && out.ouvertureFautes.g + out.ouvertureFautes.e <= out.ouvertureFautes.n * 0.1) fortes.push({ t: 'Très peu d’erreurs graves avant le 15e coup.', s: 'sf' });
   R.filter(r => !r.ok).forEach(r => faibles.push(r.titre));
   const pire = out.variantes.filter(v => v.probleme).sort((a, b2) => b2.aperdre - a.aperdre)[0] || null;
   if (pire) faibles.push(`Variante ${pire.lib} : ${pire.def} % de défaites sur ${pire.n} parties.`);
