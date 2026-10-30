@@ -2,7 +2,8 @@ import { Chess } from 'chess.js';
 import { SPRITE } from './pieces.js';
 import { expliquerCoup, pourquoiMeilleur } from './expliquer.js';
 import { COURS } from './ouvertures-data.js';
-import { analyserOuverture, prefDe, aPref, libelle, sansDe } from './ouv-perso.js';
+import { analyserOuverture } from './ouv-perso.js';
+import { classer, departsDe, nivMax, nettoyerCoups, libelle, sansDe } from './positions.js';
 import { Moteur, NIV_ELO, paramsElo, eloProche, evaluerPositions, calculer, formatEval, winPct } from './analyse.js';
 
 const SB = 'https://qsyrrcrknxdkdsxkoooa.supabase.co';
@@ -442,20 +443,20 @@ function blocAbandons(per) {
   return sec;
 }
 
-function detLigne(g) {
-  const o = famille(g.o);
+function detLigne(g, classe = false) {
+  const ov = classe ? ouvertureDe(g) : { nom: '', indic: (famille(g.o).fam === 'Ouverture inconnue' ? '' : famille(g.o).fam) };
   const ra = S.ana && S.ana[g.u]; const cn = ra ? (g.co === 'blancs' ? ra.cw : ra.cb) : null;
-  const det = [o.fam === 'Ouverture inconnue' ? '' : o.fam, cn ? (cn.g ? pl(cn.g, 'gaffe') : 'sans gaffe') : ''].filter(Boolean).join(' / ');
+  const det = [ov.nom || ov.indic, cn ? (cn.g ? pl(cn.g, 'gaffe') : 'sans gaffe') : ''].filter(Boolean).join(' / ');
   return (g.issue === 'g' ? 'Victoire' : g.issue === 'p' ? 'Défaite' : 'Nulle') + (g.issue === 'g' ? ` par ${FIN_GAGNE[g.ra] || '—'}` : g.issue === 'p' ? ` par ${FIN_PERDU[g.res] || g.res}` : '') + (det ? ' / ' + det : '');
 }
 function majBadge(u) {
   const g = PARTIES.find(x => x.u === u); if (!g) return;
-  $$('.partie').forEach(e => { if (e.dataset.u === u) { const d = $('.det', e); if (d) d.textContent = detLigne(g); } });
+  $$('.partie').forEach(e => { if (e.dataset.u === u) { const d = $('.det', e); if (d) d.textContent = detLigne(g, !!e.closest('#v-parties')); } });
 }
-function ligPartie(g) {
+function ligPartie(g, classe = false) {
   return h('button', { class: 'partie', 'data-u': g.u, onclick: () => ouvrirPartie(g) },
     h('span', { class: 'marque ' + g.issue }),
-    h('span', { class: 'corps' }, h('div', { class: 'adv' }, esc(g.adv), h('span', {}, g.ea ?? '')), h('div', { class: 'det' }, detLigne(g))),
+    h('span', { class: 'corps' }, h('div', { class: 'adv' }, esc(g.adv), h('span', {}, g.ea ?? '')), h('div', { class: 'det' }, detLigne(g, classe))),
     h('span', { class: 'droite' }, g.delta != null ? h('div', { class: 'delta ' + (g.delta > 0 ? 'pos' : g.delta < 0 ? 'neg' : 'zero') }, signe(g.delta)) : h('div', { class: 'delta zero' }, '—'),
       g.p != null && h('div', { class: 'prec' }, g.p.toFixed(0) + ' %')));
 }
@@ -476,13 +477,13 @@ function vueParties() {
     zone.innerHTML = '';
     const q = f.q.trim().toLowerCase();
     const arr = doneesMode().filter(g => (f.couleur === 'tous' || g.co === f.couleur) && (f.issue === 'tous' || g.issue === f.issue) &&
-      (!q || (g.adv || '').toLowerCase().includes(q) || (g.o || '').toLowerCase().replace(/-/g, ' ').includes(q))).reverse();
+      (!q || (g.adv || '').toLowerCase().includes(q) || (g.o || '').toLowerCase().replace(/-/g, ' ').includes(q) || ouvertureDe(g).nom.toLowerCase().includes(q))).reverse();
     if (!arr.length) { zone.append(h('div', { class: 'vide-liste' }, 'Aucune partie ne correspond à ces filtres.')); return; }
     let jourPrec = '';
     arr.slice(0, S.nbListe).forEach(g => {
       const j = fJour.format(g.date) + (g.date.getFullYear() !== new Date().getFullYear() ? ' ' + g.date.getFullYear() : '');
       if (j !== jourPrec) { zone.append(h('div', { class: 'jour' }, j.charAt(0).toUpperCase() + j.slice(1))); jourPrec = j; }
-      zone.append(ligPartie(g));
+      zone.append(ligPartie(g, true));
     });
     if (arr.length > S.nbListe) zone.append(h('button', { class: 'plus', onclick: () => { S.nbListe += 80; liste(); } }, `Afficher plus (${arr.length - S.nbListe} restantes)`));
   }
@@ -490,40 +491,94 @@ function vueParties() {
 }
 
 /* ---------- ouvertures : cours ---------- */
-S.mv = store.get('ec_mv', { n: 0, d: {} });
+/* ---- coups de toutes les parties + classement par position réelle (source unique pour tous les écrans d'ouvertures) ---- */
+try { localStorage.removeItem('ec_mv'); } catch {}
+S.mv = store.get('ec_mv2', { n: 0, d: {}, np: {} });
+const DEPARTS = departsDe(COURS), NIV_MAX = nivMax(DEPARTS), VERSION_COURS = COURS.map(c => c.id + c.co + c.debut).join('|');
+S.cl = store.get('ec_cl2', { v: '', d: {} }); if (S.cl.v !== VERSION_COURS) S.cl = { v: VERSION_COURS, d: {} };
+S.perf = store.get('ec_perf', null);
 async function chargerMv() {
-  if (S.mvEnCours || S.mvEchec || !S.code) return false;
-  S.mvEnCours = true;
-  try { const r = await rpc('echecs_coups_ouverture', { p_code: S.code }); const d = {}; for (const x of r) d[x.u] = x.m; S.mv = { n: PARTIES.length, d }; store.set('ec_mv', S.mv); return true; }
-  catch { S.mvEchec = true; return false; } finally { S.mvEnCours = false; }
+  if (S.mvEnCours || !S.code) return false;
+  S.mvEnCours = true; S.mvEchec = false; const t0 = performance.now();
+  try {
+    const r = await rpc('echecs_coups_ouverture', { p_code: S.code }); const d = {}, np = {};
+    for (const x of r) { d[x.u] = nettoyerCoups(x.m).join(' '); np[x.u] = x.np; }
+    S.mv = { n: Object.keys(d).length, d, np }; store.set('ec_mv2', S.mv);
+    S.perf = { ...(S.perf || {}), reseau: Math.round(performance.now() - t0), nReseau: S.mv.n, date: Date.now() }; store.set('ec_perf', S.perf);
+    return true;
+  } catch { S.mvEchec = true; return false; } finally { S.mvEnCours = false; }
 }
-/* une partie appartient à un cours si ses premiers coups sont ceux du cours (les coups viennent de ta base) */
-const partiesDuCours = c => { const pref = prefDe(c); return PARTIES.filter(g => g.co === c.co && (S.mv.d[g.u] ? aPref(S.mv.d[g.u], pref) : (!S.mv.n && c.re.test(g.o || '')))); };
+/* classement : pour chaque partie, l'ouverture de départ et les positions de fiche traversées (cache par partie, calcul incrémental) */
+async function classerTout() {
+  if (S.clEnCours) return; S.clEnCours = true;
+  const aFaire = PARTIES.filter(g => S.mv.d[g.u] != null && !S.cl.d[g.u]);
+  const t0 = performance.now(); let cpu = 0; S.clProg = { i: 0, n: aFaire.length };
+  try {
+    for (let i = 0; i < aFaire.length; i += 60) {
+      const c0 = performance.now();
+      for (const g of aFaire.slice(i, i + 60)) { const r = classer(nettoyerCoups(S.mv.d[g.u]), g.co, DEPARTS, NIV_MAX); S.cl.d[g.u] = { o: r.o, a: r.a, f: r.f, np: S.mv.np[g.u] ?? r.np, ok: r.ok ? 1 : 0 }; }
+      cpu += performance.now() - c0; S.clProg.i = Math.min(aFaire.length, i + 60);
+      if (S.tab === 'ouvertures') majBandeau();
+      await new Promise(r => setTimeout(r, 0));
+    }
+    if (aFaire.length) { store.set('ec_cl2', S.cl); S.perf = { ...(S.perf || {}), n: aFaire.length, cpu: Math.round(cpu), total: Math.round(performance.now() - t0), date: Date.now() }; store.set('ec_perf', S.perf); }
+  } finally { S.clEnCours = false; S.clProg = null; }
+}
+const clDe = g => S.cl.d[g.u] || null;
+const partiesDuCours = c => PARTIES.filter(g => { const k = clDe(g); return k && k.a.some(x => x[0] === c.id); });
 const persoDe = (c, ps) => analyserOuverture(c, ps || partiesDuCours(c), S.mv.d, S.ana);
 const texteNote = n => (n && typeof n === 'object' ? n.t : n) || '';
+/* état des données : rien n'est ignoré en silence */
+function etatCoups() {
+  const total = PARTIES.length, sans = PARTIES.filter(g => S.mv.d[g.u] == null).length;
+  const classees = PARTIES.filter(g => clDe(g)).length, ill = PARTIES.filter(g => clDe(g) && !clDe(g).ok).length;
+  const courtes = PARTIES.filter(g => clDe(g) && clDe(g).np < 30).length;
+  return { total, sans, classees, ill, courtes, enCours: S.mvEnCours || S.clEnCours };
+}
+const fs_ = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+function bandeau() {
+  const e = etatCoups(), t = [];
+  if (S.mvEnCours) t.push('Lecture des coups de tes parties en cours…');
+  else if (e.sans) t.push(`${e.sans} partie${e.sans > 1 ? 's' : ''} sur ${e.total} sans coups chargés : ${e.sans > 1 ? 'elles ne sont' : 'elle n’est'} pas incluse${e.sans > 1 ? 's' : ''} dans ces chiffres.` + (S.mvEchec ? ' Le chargement a échoué (connexion ?).' : ''));
+  if (S.clEnCours && S.clProg) t.push(`Classement des ouvertures : ${S.clProg.i} sur ${S.clProg.n} parties…`);
+  if (e.ill) t.push(`${e.ill} partie${e.ill > 1 ? 's' : ''} aux coups illisibles : non classée${e.ill > 1 ? 's' : ''}.`);
+  if (!t.length) t.push(`${e.classees} parties rapides classées sur ${e.total}.` + (e.courtes ? ` ${e.courtes} font moins de 15 coups : elles comptent dans les résultats, pas dans l’analyse des 15 premiers coups.` : ''));
+  const b = h('div', { class: 'bandeau-donnees' }, h('p', {}, t.join(' ')));
+  if (e.sans && !S.mvEnCours) b.append(h('button', { class: 'btn discret', onclick: async () => { S.mvTente = null; await chargerMv(); await classerTout(); rendre(); } }, 'Recharger les coups'));
+  if (S.perf && S.perf.cpu != null) b.append(h('p', { class: 'perf' }, `Dernier calcul du classement sur cet appareil : ${fs_(S.perf.total)} pour ${S.perf.n} parties (dont ${fs_(S.perf.cpu)} de calcul)` + (S.perf.reseau ? `, lecture réseau ${fs_(S.perf.reseau)}.` : '.')));
+  return b;
+}
+function majBandeau() { const o = $('.bandeau-donnees'); if (o) o.replaceWith(bandeau()); }
+async function preparerOuvertures() {
+  if (S.mvTente !== PARTIES.length && (S.mv.n !== PARTIES.length) && !S.mvEnCours) { S.mvTente = PARTIES.length; await chargerMv(); if (S.tab === 'ouvertures') vueOuvertures(); }
+  if (!S.clEnCours && PARTIES.some(g => S.mv.d[g.u] != null && !S.cl.d[g.u])) { await classerTout(); if (S.tab === 'ouvertures' && !$('#feuille').classList.contains('on')) vueOuvertures(); }
+}
+/* nom d'ouverture d'une partie : la fiche jouée au départ ; le nom chess.com n'est qu'une indication */
+function ouvertureDe(g) {
+  const k = clDe(g), c = k && k.o ? COURS.find(x => x.id === k.o) : null;
+  const o = famille(g.o), indic = o.fam === 'Ouverture inconnue' ? '' : o.fam;
+  const tr = k && c && k.a.some(x => x[2]) ? k.a.filter(x => x[2] && x[0] !== k.o).map(x => COURS.find(z => z.id === x[0]).nom) : [];
+  return { nom: c ? c.nom : '', indic, transpo: tr, groupe: k ? k.f : '' };
+}
 const progCours = () => store.get('ec_cours_prog', {});
 function sauverProg(id, idx, erreurs) { const p = progCours(); p[id + '|' + idx] = { e: erreurs, d: dateLocale() }; store.set('ec_cours_prog', p); }
 
 function vueOuvertures() {
   const v = $('#v-ouvertures'); v.innerHTML = '';
   v.append(h('div', { class: 'entete' }, h('h1', {}, 'Ouvertures')));
-  v.append(h('p', { class: 'intro-ouv' }, 'Les ouvertures que tu joues le plus. Touche-en une pour comprendre son idée, rejouer ses coups clés avec leurs explications, voir ce que tes propres parties montrent, et t’entraîner.'));
-  if (S.mv.n !== PARTIES.length && !S.mvEchec) {
-    v.append(h('p', { class: 'ana-msg', style: 'margin:0 20px 12px' }, 'Lecture des coups de tes parties…'));
-    chargerMv().then(ok => { if (S.tab === 'ouvertures' && !$('#feuille').classList.contains('on')) vueOuvertures(); });
-  }
-  const L = COURS.map(c => { const ps = partiesDuCours(c), s = stats(ps); return { c, ps, s }; }).sort((a, b) => b.s.n - a.s.n);
+  v.append(h('p', { class: 'intro-ouv' }, 'Les ouvertures que tu joues le plus, reconnues par la position réelle sur l’échiquier (une partie peut figurer dans plusieurs fiches si les coups sont joués dans un autre ordre). Touche-en une pour la comprendre, voir ce que tes parties montrent et t’entraîner.'));
+  v.append(bandeau());
+  preparerOuvertures();
+  const L = COURS.map(c => { const ps = partiesDuCours(c), s = stats(ps); const tr = ps.filter(g => clDe(g).a.some(x => x[0] === c.id && x[2])).length; return { c, ps, s, tr }; }).sort((a, b) => b.s.n - a.s.n);
   const liste = h('div', { class: 'cours-liste' });
-  L.forEach(({ c, s }) => {
+  L.forEach(({ c, s, tr }) => {
     const prog = progCours(); const nl = c.lignes.length;
     const faites = c.lignes.filter((_, i) => prog[c.id + '|' + i] && prog[c.id + '|' + i].e === 0).length;
-    let etiq = null;
-    if (s.n >= 15 && pct(s.g, s.n) < 45) etiq = ['À travailler', 'travail']; else if (s.n >= 15 && pct(s.g, s.n) >= 55) etiq = ['Ça marche bien', 'bien'];
     liste.append(h('button', { class: 'cours-ligne', onclick: () => ouvrirCours(c) },
       h('span', { class: 'cl-corps' }, h('span', { class: 'cl-nom' }, c.nom),
         h('span', { class: 'cl-sub' }, `${c.co === 'blancs' ? 'Avec les blancs' : 'Avec les noirs'}, ${c.debut}`),
         h('span', { class: 'cl-prog' }, faites ? `${faites} ligne${faites > 1 ? 's' : ''} sur ${nl} sans faute à l’entraînement` : `${nl} ligne${nl > 1 ? 's' : ''} à travailler`)),
-      h('span', { class: 'cl-stat' }, s.n ? [h('b', {}, `${pct(s.g, s.n)} %`), h('small', {}, `${s.n} parties`)] : h('small', {}, 'Aucune partie'), etiq && h('i', { class: 'etiq ' + etiq[1] }, etiq[0]))));
+      h('span', { class: 'cl-stat' }, s.n ? [h('b', {}, `${pct(s.g, s.n)} %`), h('small', {}, `${s.n} parties`), tr ? h('small', {}, `dont ${tr} par transposition`) : null] : h('small', {}, 'Aucune partie'))));
   });
   v.append(liste);
   const det = h('details', { class: 'plie', style: 'margin:26px 20px 0' }, h('summary', {}, 'Toutes mes ouvertures (statistiques)'), h('div', { id: 'stats-ouv' }));
@@ -531,29 +586,30 @@ function vueOuvertures() {
   det.addEventListener('toggle', () => { if (det.open && !$('#stats-ouv').children.length) statsOuvertures($('#stats-ouv')); });
 }
 
+/* statistiques globales : chaque partie est comptée une seule fois, dans l'ouverture jouée au départ */
 function statsOuvertures(host) {
   host.append(h('div', { class: 'filtres', style: 'padding-left:0' },
     ...['blancs', 'noirs'].map(c => h('button', { 'aria-pressed': S.ouvCouleur === c, onclick: () => { S.ouvCouleur = c; host.innerHTML = ''; statsOuvertures(host); } }, 'Avec les ' + c))));
   const arr = doneesMode().filter(g => g.co === S.ouvCouleur);
-  const fams = new Map();
+  const grp = new Map(); let sansCoups = 0;
   for (const g of arr) {
-    const o = famille(g.o); const F = fams.get(o.fam) || { fam: o.fam, parties: [], vars: new Map() };
-    F.parties.push(g); const k = o.var || 'Ligne principale';
-    const Vv = F.vars.get(k) || []; Vv.push(g); F.vars.set(k, Vv); fams.set(o.fam, F);
+    const k = clDe(g); if (!k) { sansCoups++; continue; }
+    const c = k.o ? COURS.find(x => x.id === k.o) : null;
+    const cle = c ? c.id : 'g:' + k.f, lib = c ? c.nom : (k.f ? libelle(k.f.split(' '), 1) : 'Parties très courtes');
+    const F = grp.get(cle) || { fam: lib, fiche: !!c, parties: [], noms: new Map() };
+    F.parties.push(g); const nom = famille(g.o).fam; F.noms.set(nom, (F.noms.get(nom) || 0) + 1); grp.set(cle, F);
   }
-  const liste = [...fams.values()].sort((a, b) => b.parties.length - a.parties.length);
+  const liste = [...grp.values()].sort((a, b) => b.parties.length - a.parties.length);
+  const total = liste.reduce((s, F) => s + F.parties.length, 0);
+  host.append(h('p', { class: 'ana-msg', style: 'margin:0 0 10px' }, `${arr.length} parties : ${total} classées, chacune une seule fois, dans l’ouverture jouée au départ` + (sansCoups ? `, ${sansCoups} sans coups chargés (non comptées).` : '.')));
   if (!liste.length) { host.append(h('div', { class: 'vide-liste' }, 'Pas encore de parties.')); return; }
   liste.forEach(F => {
-    const s = stats(F.parties);
-    const bloc = h('div', { class: 'ouv', style: 'padding-left:0;padding-right:0' + (S.ouvert.has(S.ouvCouleur + F.fam) ? '' : '') });
-    if (S.ouvert.has(S.ouvCouleur + F.fam)) bloc.classList.add('ouvert');
-    bloc.append(h('button', { 'aria-expanded': S.ouvert.has(S.ouvCouleur + F.fam), onclick: () => { const k = S.ouvCouleur + F.fam; S.ouvert.has(k) ? S.ouvert.delete(k) : S.ouvert.add(k); bloc.classList.toggle('ouvert'); } },
-      h('div', { class: 't' }, h('span', { class: 'nom' }, F.fam), h('span', { class: 'nb' }, `${s.n} parties`)), barrePile(s), h('div', { class: 'pct' }, `${pct(s.g, s.n)} % de victoires`)));
-    const vars = h('div', { class: 'vars' });
-    [...F.vars.entries()].sort((a, b) => b[1].length - a[1].length).forEach(([nom, ps]) => {
-      const sv = stats(ps);
-      vars.append(h('div', { class: 'var' }, h('div', { class: 't' }, h('span', { class: 'nom' }, nom), h('span', { class: 'nb' }, `${sv.n} / ${pct(sv.g, sv.n)} %`)), barrePile(sv)));
-    });
+    const s = stats(F.parties), cle = S.ouvCouleur + F.fam;
+    const bloc = h('div', { class: 'ouv', style: 'padding-left:0;padding-right:0' }); if (S.ouvert.has(cle)) bloc.classList.add('ouvert');
+    bloc.append(h('button', { 'aria-expanded': S.ouvert.has(cle), onclick: () => { S.ouvert.has(cle) ? S.ouvert.delete(cle) : S.ouvert.add(cle); bloc.classList.toggle('ouvert'); } },
+      h('div', { class: 't' }, h('span', { class: 'nom' }, F.fam), h('span', { class: 'nb' }, `${s.n} parties`)), barrePile(s), h('div', { class: 'pct' }, `${pct(s.g, s.n)} % de victoires` + (F.fiche ? '' : ' · pas de fiche'))));
+    const vars = h('div', { class: 'vars' }, h('p', { class: 'ana-msg', style: 'margin:0 0 6px' }, 'Noms donnés par chess.com (indicatif) :'));
+    [...F.noms.entries()].sort((a, b) => b[1] - a[1]).forEach(([nom, n]) => vars.append(h('div', { class: 'var' }, h('div', { class: 't' }, h('span', { class: 'nom' }, nom), h('span', { class: 'nb' }, `${n}`)))));
     bloc.append(vars); host.append(bloc);
   });
 }
@@ -598,7 +654,7 @@ function carteExemple(ex, cours, ov) {
 function blocsPerso(cours, ps, perso, ov) {
   const nomPartie = (t, ...k) => h('div', { class: 'bloc-cours' }, h('h3', {}, t), ...k);
   const vide = t => h('p', { class: 'ana-msg' }, t);
-  const attente = S.mv.n !== PARTIES.length && !S.mvEchec;
+  const attente = !!(S.mvEnCours || S.clEnCours || S.mv.n !== PARTIES.length);
   const pasAssez = perso.nAna < 6 ? `Seulement ${perso.nAna} de tes ${perso.n} parties de cette ouverture ont été analysées par le moteur : les erreurs précises demandent au moins 6 parties analysées. Tu peux augmenter le nombre de parties analysées dans Réglages.` : null;
   const B = {};
   if (!perso.n) {
@@ -650,6 +706,8 @@ function blocsPerso(cours, ps, perso, ov) {
   bs.append(h('div', { class: 'bilan-top', style: 'margin-bottom:10px' }, h('div', { class: 'grand', style: 'font-size:34px' }, bi.vic + ' %'), h('div', { class: 'txt' }, `de victoires sur ${bi.n} parties`)), barrePile(st),
     h('div', { class: 'legende' }, h('span', { class: 'g' }, `${bi.g} gagnées`), h('span', { class: 'p' }, `${bi.p} perdues`), h('span', {}, `${bi.nul} nulles`)),
     h('p', { class: 'ana-msg', style: 'margin:8px 0 0' }, `Tu ne perds pas dans ${bi.nonDef} % des parties.` + (bi.elo ? ` Elo moyen de tes adversaires : ${bi.elo}.` : '')));
+  { const tr = ps.filter(g => clDe(g).a.some(x => x[0] === cours.id && x[2])).length, multi = ps.filter(g => clDe(g).a.length > 1).length;
+    bs.append(h('p', { class: 'ana-msg', style: 'margin:8px 0 0' }, `Reconnues par la position : ${bi.n} parties, dont ${tr} arrivées par transposition (autre ordre de coups) et ${multi} aussi présentes dans une autre fiche.`)); }
   if (perso.evol.length >= 2) bs.append(h('p', { class: 'ana-msg', style: 'margin:10px 0 4px' }, 'Évolution (victoires, par tranche de 10 parties, de la plus ancienne à la plus récente) :'),
     h('div', { class: 'evol' }, perso.evol.map(e => h('div', {}, h('i', { style: `height:${Math.max(6, e.vic)}%` }), h('small', {}, e.vic + ' %')))));
   else bs.append(vide('Pas assez de parties pour montrer une évolution (il en faut au moins 15).'));
@@ -668,7 +726,7 @@ function blocsPerso(cours, ps, perso, ov) {
   }
   const dern = ps.slice(-5).reverse();
   bs.append(h('h4', { class: 'sous-t' }, 'Tes dernières parties'), h('div', { class: 'liste-a', style: 'margin:6px -4px 0' }, dern.map(g => h('button', { class: 'ligne-a', style: 'padding-left:4px;padding-right:4px', onclick: () => { ov.fermer(); setTimeout(() => ouvrirPartie(g), 50); } },
-    h('span', { class: 'corps' }, h('div', { class: 'adv' }, g.adv, h('span', {}, fCourt.format(g.date))), h('div', { class: 'det' }, detLigne(g)))))));
+    h('span', { class: 'corps' }, h('div', { class: 'adv' }, g.adv, h('span', {}, fCourt.format(g.date))), h('div', { class: 'det' }, detLigne(g, true)))))));
   B.stats = bs;
   return B;
 }

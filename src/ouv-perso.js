@@ -7,14 +7,9 @@
    - ana     : { url : résumé d'analyse } ; resume.op = { of: [[ply, cls, perte, meilleurSAN, type]], e10, e15 } si la partie est analysée
    Une partie sans analyse moteur sert aux statistiques et aux coups joués, jamais aux erreurs. */
 
-export const sansDe = deb => deb.replace(/\d+\.(\.\.)?/g, ' ').trim().split(/\s+/).filter(Boolean);
-export const prefDe = cours => sansDe(cours.debut).join(' ');
-export const aPref = (m, pref) => !!m && (m === pref || m.startsWith(pref + ' '));
+import { sansDe, libelle, cleApres } from './positions.js';
+export { sansDe, libelle };
 
-/* « 4.d3 d6 » à partir de jetons et du rang (1 = premier demi-coup) du premier jeton */
-export function libelle(jetons, ply0) {
-  return jetons.map((t, k) => { const p = ply0 + k; return p % 2 ? `${(p + 1) / 2}.${t}` : (k === 0 ? `${p / 2}...${t}` : t); }).join(' ');
-}
 const pc = (a, b) => (b ? Math.round((100 * a) / b) : 0);
 const bil = arr => { const r = { n: arr.length, g: 0, p: 0, nul: 0 }; for (const x of arr) r[x.g.issue === 'g' ? 'g' : x.g.issue === 'p' ? 'p' : 'nul']++; return r; };
 const moyenne = a => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
@@ -93,7 +88,8 @@ export function analyserOuverture(cours, parties, mv, ana) {
         const [ply, cls, perte, best, type] = f; if (ply > m.length) continue;
         const san = m[ply - 1], avant = m.slice(0, ply - 1);
         if (GRAVE(cls)) types[type === 'autre' ? 'strat' : 'tact']++;
-        const k = avant.join(' ') + '|' + san;
+        const cp = cleApres(m, ply - 1); if (cp == null) continue;
+        const k = cp + '|' + san;
         const e = pos.get(k) || { avant, san, ply, parties: [], pertes: [], bests: new Map() };
         e.parties.push(x.g); e.pertes.push(perte); if (best) e.bests.set(best, (e.bests.get(best) || 0) + 1); pos.set(k, e);
         if (GRAVE(cls) && ply >= 2) { const o = m[ply - 2]; const q = parOpp.get(o) || []; q.push({ g: x.g, ply, san, best, perte }); parOpp.set(o, q); }
