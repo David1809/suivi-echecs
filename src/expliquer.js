@@ -63,6 +63,11 @@ function parler(col, voix) {
     p: t => (tu ? (FEM[t] ? 'ta ' : 'ton ') + NOM[t] : `${laLe(t)} ${deCamp}`),
     P: t => cap(tu ? (FEM[t] ? 'ta ' : 'ton ') + NOM[t] : `${laLe(t)} ${deCamp}`),
     roi: tu ? 'ton roi' : `le roi ${deCamp}`,
+    ses: tu ? 'tes' : 'leurs',
+    pieces: tu ? 'tes pièces' : `les pièces ${col === 'w' ? 'blanches' : 'noires'}`,
+    dePieces: tu ? 'de tes pièces' : `des pièces ${col === 'w' ? 'blanches' : 'noires'}`,
+    piecesAdv: tu ? 'les pièces de l’adversaire' : `les pièces ${col === 'w' ? 'noires' : 'blanches'}`,
+    sien: tu ? 'à toi' : deCamp,
     coup: tu ? 'ton coup' : 'ce coup',
     chances: tu ? 'Tes chances de gagner' : `Les chances de gagner ${deCamp}`,
     deCamp, camp
@@ -136,7 +141,7 @@ function suivreEchanges(c, pv, dejaCapture) {
 }
 
 /* compare la position après le coup joué et après le meilleur coup, du point de vue de `col` */
-function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, plyNum, finale }) {
+function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, plyNum, finale, voc }) {
   const O = autre(col), R = []; // R : { poids, texte }
   const ajoute = (poids, texte) => R.push({ poids, texte });
   const S = m0.san, B = mb ? mb.san : null;
@@ -144,17 +149,17 @@ function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, p
   // structure de pions
   const dblAv = pionsDoubles(avant, col), dblJ = pionsDoubles(apresJoue, col);
   const nouveauxDbl = dblJ.filter(f => !dblAv.includes(f));
-  if (nouveauxDbl.length) ajoute(1.0, `Avec ${S}, tu doubles tes pions sur la colonne ${nouveauxDbl[0]} : deux pions sur la même colonne se protègent mal et sont plus faciles à attaquer.`);
+  if (nouveauxDbl.length) ajoute(1.0, `Avec ${S}, ${voc.sujet} ${voc.v('doubles', 'doublent')} ${voc.ses} pions sur la colonne ${nouveauxDbl[0]} : deux pions sur la même colonne se protègent moins bien et sont plus faciles à attaquer.`);
   const isoAv = pionsIsoles(avant, col), isoJ = pionsIsoles(apresJoue, col);
   const nouveauxIso = isoJ.filter(sq => !isoAv.includes(sq) && sq !== m0.to).concat(isoJ.includes(m0.to) && !isoAv.includes(m0.from) ? [m0.to] : []);
-  if (nouveauxIso.length) ajoute(0.9, `Ton pion en ${nouveauxIso[0]} se retrouve isolé : plus aucun pion voisin ne peut le défendre, il sera une cible durable.`);
+  if (nouveauxIso.length) ajoute(0.9, `${voc.P('p')} en ${nouveauxIso[0]} se retrouve isolé : plus aucun pion voisin ne peut le défendre ; il peut devenir une cible.`);
   const pasAv = pionsPasses(avant, O), pasJ = pionsPasses(apresJoue, O);
   const nouveauPasse = pasJ.filter(sq => !pasAv.includes(sq));
-  if (nouveauPasse.length) ajoute(1.4, `Après ${S}, l’adversaire obtient un pion passé en ${nouveauPasse[0]} : plus aucun de tes pions ne peut l’arrêter en chemin, c’est un atout durable pour lui.`);
+  if (nouveauPasse.length) ajoute(1.4, `Après ${S}, ${voc.adv} ${voc.v('obtient', 'obtiennent')} un pion passé en ${nouveauPasse[0]} : plus aucun pion ${voc.sien} ne peut l’arrêter en chemin.`);
   if (apresMeilleur) {
     const pasB = pionsPasses(apresMeilleur, col), pasJm = pionsPasses(apresJoue, col);
     const gagne = pasB.filter(sq => !pasJm.includes(sq));
-    if (gagne.length) ajoute(1.3, `Avec ${B}, tu obtenais un pion passé en ${gagne[0]} : un pion qu’aucun pion adverse ne peut plus arrêter.`);
+    if (gagne.length) ajoute(1.3, `Avec ${B}, ${voc.sujet} ${voc.v('obtenais', 'obtenaient')} un pion passé en ${gagne[0]} : un pion qu’aucun pion adverse ne peut plus arrêter.`);
   }
 
   // activité des pièces
@@ -162,43 +167,43 @@ function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, p
   if (mAv && mJ) {
     const moved = mJ.par[m0.to];
     const before = mAv.par[m0.from];
-    if (moved && before && moved.n + 3 <= before.n) ajoute(0.9, `${cap(laLe(m0.piece))} contrôlait ${before.n} cases en ${m0.from} et n’en contrôle plus que ${moved.n} en ${m0.to} : ${il(m0.piece)} devient moins actif${fe(m0.piece)}.`);
+    if (moved && before && moved.n + 3 <= before.n) ajoute(0.9, `${cap(laLe(m0.piece))} avait ${before.n} coups possibles en ${m0.from} et n’en a plus que ${moved.n} en ${m0.to} : ${il(m0.piece)} devient moins mobile.`);
     const perdues = Object.entries(mAv.par).filter(([sq, v]) => sq !== m0.from && (mJ.par[sq] ? mJ.par[sq].n + 3 <= v.n : false));
-    if (perdues.length) { const [sq, v] = perdues[0]; ajoute(0.8, `${cap(laLe(v.type))} en ${sq} perd de la liberté (${v.n} cases puis ${mJ.par[sq].n}) : ton coup ${FEM[v.type] ? 'lui' : 'lui'} ferme des cases.`); }
-    if (mB && mB.total - mJ.total >= 4) ajoute(0.6 + Math.min(0.6, (mB.total - mJ.total) / 20), `Avec ${B}, tes pièces contrôlent plus de cases (${mB.total} au lieu de ${mJ.total}) : elles sont plus actives.`);
+    if (perdues.length) { const [sq, v] = perdues[0]; ajoute(0.8, `${cap(laLe(v.type))} en ${sq} perd en mobilité (${v.n} coups possibles puis ${mJ.par[sq].n}) : ${voc.coup} lui ferme des cases.`); }
+    if (mB && mB.total - mJ.total >= 4) ajoute(0.6 + Math.min(0.6, (mB.total - mJ.total) / 20), `Avec ${B}, les cavaliers, fous, tours et dame ${voc.dePieces} auraient plus de coups possibles (${mB.total} au lieu de ${mJ.total}).`);
   }
   const mOAv = mobilite(avant, O), mOJ = mobilite(apresJoue, O);
-  if (mOAv && mOJ && mOJ.total - mOAv.total >= 5) ajoute(0.6, `Après ${S}, les pièces de l’adversaire gagnent de la liberté (${mOAv.total} cases puis ${mOJ.total}).`);
+  if (mOAv && mOJ && mOJ.total - mOAv.total >= 5) ajoute(0.6, `Après ${S}, ${voc.piecesAdv} (cavaliers, fous, tours, dame) ont plus de coups possibles (${mOAv.total} puis ${mOJ.total}).`);
 
   // colonnes ouvertes, avant-postes, fous
   if (apresMeilleur) {
     const tB = toursActives(apresMeilleur, col), tJ = toursActives(apresJoue, col);
     const nouv = tB.filter(sq => !tJ.includes(sq));
-    if (nouv.length) ajoute(0.9, `Avec ${B}, ta tour se place sur la colonne ${nouv[0][0]}, ${colonneOuverte(apresMeilleur, nouv[0][0], col) === 'ouverte' ? 'une colonne ouverte' : 'une colonne sans pion à toi'} : c’est là que les tours sont les plus efficaces.`);
+    if (nouv.length) ajoute(0.9, `Avec ${B}, ${voc.p('r')} se placerait sur la colonne ${nouv[0][0]}, ${colonneOuverte(apresMeilleur, nouv[0][0], col) === 'ouverte' ? 'une colonne ouverte' : `une colonne sans pion ${voc.sien}`} : les tours y sont en général plus actives.`);
     const aB = avantPostes(apresMeilleur, col), aJ = avantPostes(apresJoue, col);
     const nouvA = aB.filter(sq => !aJ.includes(sq));
-    if (nouvA.length) ajoute(1.0, `Avec ${B}, tu installes un cavalier en ${nouvA[0]} : il est protégé par un pion et aucun pion adverse ne peut le chasser, c’est une très bonne case.`);
+    if (nouvA.length) ajoute(1.0, `Avec ${B}, ${voc.sujet} ${voc.v('installes', 'installent')} un cavalier en ${nouvA[0]} : il est protégé par un pion et aucun pion adverse ne peut le chasser (avant-poste).`);
     const fB = foursMauvais(apresMeilleur, col).length, fJ = foursMauvais(apresJoue, col).length;
-    if (fJ > fB) ajoute(0.5, 'Ton fou reste enfermé derrière tes propres pions (« mauvais fou ») : le meilleur coup l’aurait libéré.');
+    if (fJ > fB) ajoute(0.5, `${voc.P('b')} reste un « mauvais fou » (au moins 5 pions ${voc.sien} sur sa couleur), ce que le meilleur coup évitait.`);
   }
   const aAv = avantPostes(avant, O), aJo = avantPostes(apresJoue, O);
-  if (aJo.length > aAv.length) ajoute(1.0, `Après ${S}, l’adversaire peut installer un cavalier en ${aJo.find(sq => !aAv.includes(sq))} sans que tu puisses le chasser avec un pion.`);
+  if (aJo.length > aAv.length) ajoute(1.0, `Après ${S}, ${voc.adv} ${voc.v('peut', 'peuvent')} installer un cavalier en ${aJo.find(sq => !aAv.includes(sq))} sans qu’un pion ${voc.sien} puisse le chasser.`);
 
   // roi
   const abAv = abriRoi(avant, col), abJ = abriRoi(apresJoue, col);
-  if (abAv != null && abJ != null && abJ < abAv) ajoute(1.1, `Avec ${S}, tu retires un pion de devant ton roi (il y en avait ${abAv}, il n’en reste que ${abJ}) : les cases laissées libres deviennent des portes d’entrée pour l’attaque adverse.`);
+  if (abAv != null && abJ != null && abJ < abAv) ajoute(1.1, `Avec ${S}, ${voc.sujet} ${voc.v('retires', 'retirent')} un pion de devant ${voc.roi} (il y en avait ${abAv}, il n’en reste que ${abJ}) : les cases laissées libres peuvent devenir des portes d’entrée pour l’attaque adverse.`);
   const dvAv = developpement(avant, col), dvJ = developpement(apresJoue, col), dvB = apresMeilleur ? developpement(apresMeilleur, col) : null;
   if (plyNum <= 24 && dvB) {
-    if (dvB.mineures < dvJ.mineures) ajoute(0.9, `Il te reste ${dvJ.mineures} pièce${dvJ.mineures > 1 ? 's' : ''} à développer : avec ${B}, tu en sortais une, alors que ${S} ne le fait pas. En ouverture, chaque coup devrait mettre une pièce en jeu.`);
-    if (dvB.roiAuCentre === false && dvJ.roiAuCentre) ajoute(0.9, `Avec ${B}, ton roi se met à l’abri par le roque, ce que ${S} retarde : un roi resté au centre est vulnérable quand les lignes s’ouvrent.`);
+    if (dvB.mineures < dvJ.mineures) ajoute(0.9, `${voc.Sujet} ${voc.v('as', 'ont')} encore ${dvJ.mineures} pièce${dvJ.mineures > 1 ? 's' : ''} à développer : avec ${B}, ${voc.sujet} en ${voc.v('sortais', 'sortaient')} une, alors que ${S} ne le fait pas. En ouverture, développer une pièce est en général prioritaire.`);
+    if (dvB.roiAuCentre === false && dvJ.roiAuCentre) ajoute(0.9, `Avec ${B}, ${voc.roi} se mettrait à l’abri par le roque, ce que ${S} retarde : un roi resté au centre est plus vulnérable quand les lignes s’ouvrent.`);
   }
   // centre
   const ctr = c => controleCentre(c, col);
-  if (apresMeilleur && ctr(apresMeilleur) - ctr(apresJoue) >= 2) ajoute(0.5, `Avec ${B}, tu aurais plus de contrôle sur les cases centrales (d4, e4, d5, e5).`);
-  else if (m0.piece !== 'k' && ctr(avant) - ctr(apresJoue) >= 2) ajoute(0.5, 'Ton coup réduit ton contrôle des cases centrales (d4, e4, d5, e5), ce qui donne plus de place à l’adversaire.');
+  if (apresMeilleur && ctr(apresMeilleur) - ctr(apresJoue) >= 2) ajoute(0.5, `Avec ${B}, les attaques ${voc.dePieces} sur les cases centrales (d4, e4, d5, e5) seraient plus nombreuses.`);
+  else if (m0.piece !== 'k' && ctr(avant) - ctr(apresJoue) >= 2) ajoute(0.5, `${cap(voc.coup)} réduit les attaques ${voc.dePieces} sur les cases centrales (d4, e4, d5, e5).`);
   // roi en finale
   if (finale && mb && mb.piece === 'k') ajoute(0.8, 'En finale, le roi est une pièce active : le meilleur coup le rapproche de l’action (centre, pions adverses ou ses propres pions).');
-  if (finale && m0.piece === 'k' && mb && mb.piece === 'k' && m0.to !== mb.to) ajoute(0.6, `Ton roi va en ${m0.to} alors que ${B} le plaçait mieux pour la suite.`);
+  if (finale && m0.piece === 'k' && mb && mb.piece === 'k' && m0.to !== mb.to) ajoute(0.6, `${cap(voc.roi)} va en ${m0.to} alors que ${B} le plaçait mieux pour la suite.`);
 
   return R.sort((a, b) => b.poids - a.poids).map(x => x.texte);
 }
@@ -207,21 +212,26 @@ function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, p
 export function pourquoiMeilleur(fen, best, pv, eMoi, ctx = {}) {
   const r = essai(fen, best); if (!r) return [];
   const { c, m } = r; const col = m.color; const L = [];
+  // voix : `ctx.voix` ('tu' = coup du joueur) ou `ctx.camp` (couleur du joueur) ; sans indication, on parle du joueur
+  const tien = ctx.voix ? ctx.voix === 'tu' : (ctx.camp ? col === ctx.camp : true);
+  const cotes = col === 'w' ? 'blanches' : 'noires';
+  const sesPieces = tien ? 'tes pièces' : `les pièces ${cotes}`;
   const avant = new Chess(fen);
   if (eMoi >= 9000) L.push(`il mène à un mat en ${10000 - eMoi} coup${10000 - eMoi > 1 ? 's' : ''}.`);
   if (m.captured) {
     const defs = avant.attackers(m.to, autre(col)).length;
-    L.push(`il prend ${laLe(m.captured)} en ${m.to}` + (defs === 0 ? `, qui n’était pas défendu${fe(m.captured)}.` : V[m.captured] >= V[m.piece] ? ' : l’échange est favorable.' : '.'));
+    // gain / échange de valeur égale / perte : seule la valeur nominale est comparée, avant toute reprise
+    L.push(`il prend ${laLe(m.captured)} en ${m.to}` + (defs === 0 ? `, qui n’était pas défendu${fe(m.captured)}.` : V[m.captured] > V[m.piece] ? ` : ${il(m.captured)} vaut plus que ${laLe(m.piece)} qui ${FEM[m.captured] ? 'la' : 'le'} prend.` : V[m.captured] === V[m.piece] ? ' : échange de pièces de même valeur.' : '.'));
   }
   if (/#/.test(m.san)) L.push('c’est échec et mat.');
   else if (/\+/.test(m.san)) L.push('il met le roi adverse en échec et l’oblige à réagir.');
-  if (m.san.startsWith('O-O')) L.push('il met le roi à l’abri et rapproche la tour du centre.');
+  if (m.san.startsWith('O-O')) L.push('il roque : le roi quitte le centre et la tour entre en jeu.');
   const prises = piecesEnPrise(avant, col).filter(p => p.sq === m.from);
-  if (prises.length && !m.captured) L.push(`il met ${laLe(m.piece)} à l’abri : ${il(m.piece)} était attaqué${fe(m.piece)}.`);
+  if (prises.length && !m.captured) L.push(enPrise(c, m.to, col) ? `il déplace ${laLe(m.piece)}, qui était attaqué${fe(m.piece)} (${il(m.piece)} reste cependant menacé${fe(m.piece)} en ${m.to}).` : `il met ${laLe(m.piece)} à l’abri : ${il(m.piece)} était attaqué${fe(m.piece)}.`);
   const cibs = cibles(c, m.to, autre(col));
   if (!m.captured && cibs.length >= 2) L.push(`depuis ${m.to}, ${laLe(m.piece)} attaque deux pièces à la fois : ${cibs.map(x => (x.type === 'k' ? 'le roi' : un(x.type)) + ' en ' + x.sq).join(' et ')}.`);
   else if (!m.captured && cibs.length === 1 && cibs[0].type !== 'k') {
-    const e = enPrise(c, cibs[0].sq, autre(col)); if (e) L.push(`il menace ${un(e.type)} en ${e.sq} (${e.motif === 'non défendu' ? 'sans défense' : 'échange favorable'}).`);
+    const e = enPrise(c, cibs[0].sq, autre(col)); if (e) L.push(`il menace ${un(e.type)} en ${e.sq} (${e.motif === 'non défendu' ? 'sans défense' : 'attaqué par une pièce qui vaut moins'}).`);
   }
   if (!m.captured && !cibs.length) {
     const vises = piecesDe(c, autre(col)).filter(p => p.type !== 'k' && c.attackers(p.sq, col).includes(m.to));
@@ -232,16 +242,17 @@ export function pourquoiMeilleur(fen, best, pv, eMoi, ctx = {}) {
   const protegees = piecesDe(c, col).filter(p => p.type !== 'k' && p.sq !== m.to && c.attackers(p.sq, autre(col)).length && c.attackers(p.sq, col).includes(m.to) && !avant.attackers(p.sq, col).length);
   if (protegees.length) L.push(`il protège ${un(protegees[0].type)} en ${protegees[0].sq}, qui était menacé${fe(protegees[0].type)}.`);
   const mAv = mobilite(avant, col), mAp = mobilite(c, col);
-  if (mAv && mAp && mAp.total - mAv.total >= 3 && !m.captured) L.push(`il libère tes pièces : elles contrôlent ${mAp.total - mAv.total} cases de plus qu’avant.`);
-  if (m.piece === 'p' && ['d4', 'e4', 'd5', 'e5'].includes(m.to)) L.push('il occupe le centre avec un pion, ce qui donne de la place à tes pièces.');
+  if (mAv && mAp && mAp.total - mAv.total >= 3 && !m.captured) L.push(`il libère ${sesPieces} : cavaliers, fous, tours et dame ont ${mAp.total - mAv.total} coups possibles de plus qu’avant.`);
+  if (m.piece === 'p' && ['d4', 'e4', 'd5', 'e5'].includes(m.to)) L.push(`il place un pion au centre, en ${m.to}.`);
   const avantMen = piecesEnPrise(avant, col), apresMen = piecesEnPrise(c, col);
   if (avantMen.length && apresMen.length < avantMen.length && !prises.length) L.push('il règle la menace qui pesait sur ses pièces (en défendant ou en échangeant).');
   const nPly = (fen.split(' ')[5] | 0) * 2 - (col === 'w' ? 1 : 0);
-  if (!L.length && nPly <= 20 && (m.piece === 'n' || m.piece === 'b')) L.push(`il développe ${laLe(m.piece)}, ce qui l’active pour la suite.`);
-  if (!L.length && m.piece !== 'k' && ['d4', 'e4', 'd5', 'e5'].includes(m.to)) L.push('il occupe ou surveille le centre de l’échiquier.');
+  // « développe » seulement si la pièce quitte sa case de départ
+  if (!L.length && nPly <= 20 && (m.piece === 'n' || m.piece === 'b') && ['b1', 'c1', 'f1', 'g1', 'b8', 'c8', 'f8', 'g8'].includes(m.from)) L.push(`il développe ${laLe(m.piece)} : ${il(m.piece)} quitte sa case de départ.`);
+  if (!L.length && m.piece !== 'k' && ['d4', 'e4', 'd5', 'e5'].includes(m.to)) L.push(`il place ${laLe(m.piece)} sur une case centrale (${m.to}).`);
   if (ctx.perteMat && ctx.perteMat <= -2) L.push(`il évite la perte de matériel que ${ctx.joue} permet (environ ${points(-ctx.perteMat)}).`);
   if (!L.length && ctx.finale && m.piece === 'k') L.push('en finale, le roi doit participer à la partie : ce coup le rapproche de l’action.');
-  if (!L.length) L.push('il garde la position solide et ne laisse aucune prise à l’adversaire.');
+  // pas de phrase de remplissage : si aucune règle vérifiée ne s’applique, la liste reste vide
   return L;
 }
 
@@ -257,7 +268,7 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
   const wAv = winPct(mien(eAvant)), wAp = winPct(mien(eApres));
   const finaleCtx = valeurNonPions(avant) <= 8;
 
-  if (bonne) return { titre: `${m0.san} est le meilleur coup`, lignes: [], meilleur: pourquoiMeilleur(fen, best, pvMeilleur, mien(eAvant), { finale: finaleCtx }).map(cap), san: m0.san };
+  if (bonne) return { titre: `${m0.san} est le meilleur coup`, lignes: [], meilleur: pourquoiMeilleur(fen, best, pvMeilleur, mien(eAvant), { finale: finaleCtx, voix }).map(cap), san: m0.san };
 
   // 1. mat subi ou mat manqué
   if (mien(eApres) <= -9000) {
@@ -330,15 +341,15 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
     const plyNum = (fen.split(' ')[5] | 0) * 2 - (col === 'w' ? 1 : 0);
     const rb = best ? essai(fen, best) : null;
     const apJ = suivreEchanges(cApres, pvApres, !!m0.captured), apB = rb ? suivreEchanges(rb.c, (pvMeilleur || []).slice(1), !!rb.m.captured) : null;
-    const raisons = raisonsPositionnelles({ avant, apresJoue: apJ, apresMeilleur: apB, m0, mb: rb ? rb.m : null, col, plyNum, finale: finaleCtx });
+    const raisons = raisonsPositionnelles({ avant, apresJoue: apJ, apresMeilleur: apB, m0, mb: rb ? rb.m : null, col, plyNum, finale: finaleCtx, voc: S });
     const dv = developpement(avant, col);
-    if (m0.piece === 'p' && /^[ah]$/.test(m0.to[0]) && plyNum <= 16 && dv.mineures > 0) raisons.unshift(`Ce coup de pion sur le bord de l’échiquier ne développe aucune pièce alors qu’il t’en reste ${dv.mineures} à sortir : en ouverture, mieux vaut occuper le centre et développer.`);
+    if (m0.piece === 'p' && /^[ah]$/.test(m0.to[0]) && plyNum <= 16 && dv.mineures > 0) raisons.unshift(`Ce coup de pion sur le bord de l’échiquier ne développe aucune pièce alors qu’il en reste ${dv.mineures} à sortir : en ouverture, développer est en général prioritaire.`);
     if (m0.piece === 'p' && ['f', 'g', 'h'].includes(m0.from[0]) && plyNum <= 20) {
       const roi = piecesDe(avant, col).find(p => p.type === 'k');
-      if (roi && (dv.roiAuCentre || ['g', 'h'].includes(roi.sq[0]))) raisons.unshift(`Les pions f, g et h protègent ton roi après le roque : les avancer ainsi l’affaiblit et ouvre des lignes pour l’attaque adverse.`.replace('ton roi', col === 'w' || true ? 'ton roi' : 'ton roi'));
+      if (roi && (dv.roiAuCentre || ['g', 'h'].includes(roi.sq[0]))) raisons.unshift(`Les pions f, g et h protègent ${S.roi} après le roque : les avancer ainsi peut l’affaiblir et ouvrir des lignes pour l’attaque adverse.`);
     }
-    if (m0.piece === 'q' && plyNum <= 14) raisons.push('Sortir la dame trop tôt l’expose aux attaques : l’adversaire gagne du temps en la chassant.');
-    if (m0.piece === 'n' && /^[ah]/.test(m0.to)) raisons.push('Un cavalier au bord de l’échiquier contrôle moins de cases et devient peu utile.');
+    if (m0.piece === 'q' && plyNum <= 14) { const at = cApres.attackers(m0.to, autre(col)); if (at.length) raisons.push(`La dame en ${m0.to} est attaquée par ${un(cApres.get(at[0]).type)} adverse : ${S.adv} peut gagner du temps en la chassant.`); }
+    if (m0.piece === 'n' && /^[ah]/.test(m0.to)) raisons.push('Un cavalier au bord de l’échiquier a au plus 4 coups possibles (contre 8 au centre).');
     if (rb && rb.m.captured && !m0.captured) raisons.push(`Une bonne capture était possible : ${sanDe(fen, best)} prenait ${laLe(rb.m.captured)}.`);
     const gardees = raisons.slice(0, lignes.length ? 1 : 3);
     if (gardees.length) lignes.push(...gardees);
@@ -346,6 +357,6 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
   }
 
   if (Math.abs(wAv - wAp) >= 1) lignes.push(`${S.chances} passent d’environ ${Math.round(wAv)} % à ${Math.round(wAp)} %.`);
-  const meilleur = best ? pourquoiMeilleur(fen, best, pvMeilleur, mien(eAvant), { perteMat, joue: m0.san, finale: finaleCtx }).map(cap) : [];
+  const meilleur = best ? pourquoiMeilleur(fen, best, pvMeilleur, mien(eAvant), { perteMat, joue: m0.san, finale: finaleCtx, voix }).map(cap) : [];
   return { titre: `Pourquoi ${m0.san} est moins bon`, lignes, meilleur, san: best ? sanDe(fen, best) : null };
 }

@@ -113,27 +113,54 @@ export function analyserOuverture(cours, parties, mv, ana) {
   /* ---- 5. recommandations (chacune appuyée par tes parties) ---- */
   const R = [], insuffisant = [];
   const mine = (m, k) => k % 2 === moi;
-  // a) roque tardif
+  /* Règle de conception : une fréquence décrit un comportement, elle ne prouve pas une faute.
+     Roque et dame : on affiche d'abord un constat statistique neutre (obs: true). Un « défaut » (obs: false, conseil)
+     n'apparaît que si Stockfish associe le comportement à des erreurs dans les parties analysées.
+     Les seuils ci-dessous sont des repères d'affichage, pas des seuils statistiques. */
+  // a) roque
   { const el = G.filter(x => x.m && x.m.length >= 24);
     if (el.length >= 8) {
-      const roq = x => { for (let k = 0; k < 20; k++) if (mine(x.m, k) && x.m[k].startsWith('O-O')) return true; return false; };
-      const sans = el.filter(x => !roq(x)), avec = el.filter(roq);
-      if (sans.length / el.length >= 0.25 && sans.length >= 3) {
+      const roqueEntre = (x, de, a) => { for (let k = de; k < Math.min(a, x.m.length); k++) if (mine(x.m, k) && x.m[k].startsWith('O-O')) return true; return false; };
+      const aTemps = x => roqueEntre(x, 0, 20);
+      const sans = el.filter(x => !aTemps(x)), avec = el.filter(aTemps);
+      if (sans.length >= 3 && sans.length / el.length >= 0.25) {
+        const apres = sans.filter(x => roqueEntre(x, 20, 30)).length;
+        const bouge = sans.filter(x => !roqueEntre(x, 20, 30) && x.m.some((s, k) => k < 30 && mine(x.m, k) && s[0] === 'K')).length;
+        const centre = sans.length - apres - bouge;
         const pa = avec.length >= 5 ? pc(avec.filter(x => x.g.issue === 'g').length, avec.length) : null, ps = sans.length >= 5 ? pc(sans.filter(x => x.g.issue === 'g').length, sans.length) : null;
+        const anS = sans.filter(x => x.a), anA = avec.filter(x => x.a), grave = x => gravesDe(x).length > 0;
+        const rS = anS.length ? pc(anS.filter(grave).length, anS.length) : null, rA = anA.length ? pc(anA.filter(grave).length, anA.length) : null;
+        const lie = anS.length >= 8 && anA.length >= 8 && rS - rA >= 15;
         const ex = sans.slice().sort((x, y) => y.g.t - x.g.t)[0];
-        R.push({ id: 'roque', ev: { cas: sans.length, sur: el.length, src: 'toutes' }, titre: 'Tu roques trop tard', texte: `Dans ${sans.length} parties sur ${el.length} (${pc(sans.length, el.length)} %), ton roi est encore au centre après dix coups.` + (pa != null && ps != null && Math.abs(pa - ps) >= 10 ? ` Tu gagnes ${pa} % de tes parties quand tu roques avant le 10e coup, contre ${ps} % sinon.` : ''), conseil: 'Vise le roque avant ton 8e ou 9e coup : développe cavalier et fou, puis roque, avant de lancer une attaque.', ex: [{ g: ex.g, ply: Math.min(ex.m.length, moi ? 20 : 19), info: 'Position après ton 10e coup : ton roi est toujours au centre.', apres: true }] });
-      } else if (el.length >= 8) R.push({ id: 'roque-ok', ok: true, titre: 'Tu roques à temps', texte: `Tu as roqué avant le 10e coup dans ${el.length - sans.length} parties sur ${el.length}.` });
+        let texte = `Dans ${sans.length} parties sur ${el.length} (${pc(sans.length, el.length)} %), tu n’as pas roqué avant ton 10e coup : ${apres} roquent ensuite (avant le 15e coup), ${bouge} déplacent le roi sans roquer, ${centre} ont encore le roi sur sa case de départ à la fin des coups examinés (15 premiers coups).`;
+        if (pa != null && ps != null) texte += ` Résultats : ${pa} % de victoires quand tu roques avant le 10e coup (${avec.length} parties), ${ps} % sinon (${sans.length} parties). Ce constat ne montre pas que le roque en soit la cause.`;
+        if (lie) texte += ` Stockfish relève une erreur ou une gaffe avant le 15e coup dans ${rS} % des ${anS.length} parties analysées sans roque avant le 10e coup, contre ${rA} % des ${anA.length} avec roque : une association observée dans ces parties, pas une preuve de cause.`;
+        R.push({ id: 'roque', obs: !lie, ev: { cas: sans.length, sur: el.length, src: 'toutes' }, titre: lie ? 'Roque tardif et erreurs de début de partie' : 'Roque : ce que montrent tes parties', texte,
+          ...(lie ? { conseil: 'Quand tu retardes le roque, vérifie à chaque coup si ton roi resté au centre expose une pièce ou une colonne. Un roque tardif peut rester un bon choix (structure fermée, plan d’attaque).' } : {}),
+          ex: [{ g: ex.g, ply: Math.min(ex.m.length, moi ? 20 : 19), info: 'Position après ton 10e coup : tu n’as pas encore roqué.', apres: true }] });
+      } else R.push({ id: 'roque-ok', ok: true, titre: 'Roque : constat', texte: `Tu as roqué avant le 10e coup dans ${avec.length} parties sur ${el.length}.` });
     } else insuffisant.push('le roque (moins de 8 parties de plus de 12 coups)');
   }
-  // b) dame sortie tôt
+  // b) dame : on distingue prises, sorties après développement et sorties précoces sans prise
   { const el = G.filter(x => x.m && x.m.length >= 16);
     if (el.length >= 8) {
-      const tot = x => { for (let k = 0; k < 16; k++) if (mine(x.m, k) && x.m[k][0] === 'Q') return k; return -1; };
-      const tt = el.filter(x => tot(x) >= 0);
-      if (tt.length >= 3 && tt.length / el.length >= 0.2) {
-        const ex = tt.slice().sort((x, y) => y.g.t - x.g.t)[0], k = tot(ex);
-        const pa = pc(tt.filter(x => x.g.issue === 'g').length, tt.length), reste = el.filter(x => tot(x) < 0), pr = reste.length >= 5 ? pc(reste.filter(x => x.g.issue === 'g').length, reste.length) : null;
-        R.push({ id: 'dame', ev: { cas: tt.length, sur: el.length, src: 'toutes' }, titre: 'Tu sors ta dame trop tôt', texte: `Dans ${tt.length} parties sur ${el.length}, ta dame bouge avant ton 9e coup.` + (pr != null && Math.abs(pa - pr) >= 10 ? ` Tu gagnes ${pa} % de ces parties, contre ${pr} % quand elle reste derrière.` : ''), conseil: 'Tant que tes cavaliers et tes fous ne sont pas sortis, la dame reste à la maison : l’adversaire gagne des tempos en l’attaquant.', ex: [{ g: ex.g, ply: k + 1, san: ex.m[k], info: 'Ici ta dame sort tôt.' }] });
+      const premiere = x => { for (let k = 0; k < 16; k++) if (mine(x.m, k) && x.m[k][0] === 'Q') return k; return -1; };
+      const mineures = (x, k) => { let n = 0; for (let j = 0; j < k; j++) if (mine(x.m, j) && /^[NB]/.test(x.m[j])) n++; return n; };
+      const genre = x => { const k = premiere(x); return x.m[k].includes('x') ? 'capture' : mineures(x, k) >= 2 ? 'apres' : 'precoce'; };
+      const tt = el.filter(x => premiere(x) >= 0), pre = tt.filter(x => genre(x) === 'precoce');
+      if (pre.length >= 3 && pre.length / el.length >= 0.05) {
+        const nc = tt.filter(x => genre(x) === 'capture').length, na = tt.filter(x => genre(x) === 'apres').length;
+        const reste = el.filter(x => premiere(x) < 0);
+        const pp = pre.length >= 5 ? pc(pre.filter(x => x.g.issue === 'g').length, pre.length) : null, pr = reste.length >= 5 ? pc(reste.filter(x => x.g.issue === 'g').length, reste.length) : null;
+        const an = pre.filter(x => x.a), surCoup = an.filter(x => gravesDe(x).some(f => f[0] === premiere(x) + 1));
+        const lie = an.length >= 5 && surCoup.length >= 3 && pc(surCoup.length, an.length) >= 40;
+        const ex = pre.slice().sort((x, y) => y.g.t - x.g.t)[0], k = premiere(ex);
+        let texte = `Dans ${tt.length} parties sur ${el.length}, ta dame bouge avant ton 9e coup : ${nc} fois pour prendre, ${na} fois après avoir sorti au moins deux pièces, ${pre.length} fois sans prise et avec moins de deux pièces sorties.`;
+        if (pp != null && pr != null) texte += ` Dans ces ${pre.length} dernières parties, ${pp} % de victoires, contre ${pr} % quand ta dame reste derrière : ce constat ne montre pas de lien de cause.`;
+        if (lie) texte += ` Stockfish relève une erreur ou une gaffe sur ce coup de dame dans ${surCoup.length} des ${an.length} parties analysées.`;
+        R.push({ id: 'dame', obs: !lie, ev: { cas: pre.length, sur: el.length, src: 'toutes' }, titre: lie ? 'Sorties de dame précoces et erreurs' : 'Dame : ce que montrent tes parties', texte,
+          ...(lie ? { conseil: 'Avant de sortir ta dame, regarde si une pièce adverse peut l’attaquer en gagnant un temps.' } : {}),
+          ex: [{ g: ex.g, ply: k + 1, san: ex.m[k], info: 'Ici ta dame sort tôt, sans prise.' }] });
       }
     } else insuffisant.push('la sortie de la dame (moins de 8 parties)');
   }
@@ -151,11 +178,16 @@ export function analyserOuverture(cours, parties, mv, ana) {
       R.push({ id: 'precoces', ev: { cas: gr, sur: f.n, src: 'sf' }, titre: 'Des erreurs graves dès l’ouverture', texte: `Dans ${gr} parties analysées sur ${f.n} (${pc(gr, f.n)} %), tu fais une erreur ou une gaffe avant le 15e coup` + (dom ? `, ${dom}.` : '.'), conseil: 'Dans les 15 premiers coups, vérifie à chaque coup : ce que l’adversaire vient de menacer, et si la pièce que tu déplaces reste protégée.', ex: exs });
     }
   }
-  // e) avantage non converti
+  // e) avantage à 10 coups : constat factuel, sans conclusion sur la cause (repère d'affichage : au moins 5 parties et 35 % de non-victoires)
   { const av = AN.filter(x => x.a.op.e10 != null && x.a.op.e10 >= 58);
     if (av.length >= 5) {
-      const rate = pc(av.filter(x => x.g.issue !== 'g').length, av.length);
-      if (rate >= 35) { const ex = av.filter(x => x.g.issue !== 'g').sort((x, y) => y.g.t - x.g.t)[0]; R.push({ id: 'avantage', ev: { cas: av.filter(x => x.g.issue !== 'g').length, sur: av.length, src: 'sf' }, titre: 'Tu sors de l’ouverture avec avantage, mais tu ne le convertis pas', texte: `Sur ${av.length} parties où le moteur te donnait un avantage après 10 coups, tu n’en as gagné que ${av.length - Math.round(rate * av.length / 100)}. L’ouverture n’est donc pas le problème : c’est la suite.`, conseil: 'Avec un avantage, échange les pièces, garde le roi à l’abri et évite les coups risqués.', ex: ex ? [{ g: ex.g, ply: Math.min(20, ex.m.length), info: `Position après 10 coups de chaque camp : le moteur te donnait ${ex.a.op.e10} % de chances de gagner.`, apres: true }] : [] }); }
+      const w = av.filter(x => x.g.issue === 'g').length, n = av.filter(x => x.g.issue === 'n').length, d = av.length - w - n;
+      if (pc(av.length - w, av.length) >= 35) {
+        const ex = av.filter(x => x.g.issue !== 'g').sort((x, y) => y.g.t - x.g.t)[0];
+        R.push({ id: 'avantage', obs: true, ev: { cas: av.length - w, sur: av.length, src: 'sf' }, titre: 'Avantage après dix coups',
+          texte: `Après dix coups, le moteur te donnait un avantage (au moins 58 % de chances de gagner) dans ${av.length} parties ; tu en as gagné ${w}, fait ${n} nulle${n > 1 ? 's' : ''} et perdu ${d}. Une évaluation à dix coups ne dit pas ce qui s’est passé ensuite.`,
+          ex: ex ? [{ g: ex.g, ply: Math.min(20, ex.m.length), info: `Position après 10 coups de chaque camp : le moteur te donnait ${ex.a.op.e10} % de chances de gagner.`, apres: true }] : [] });
+      }
     }
   }
   out.recos = R; out.insuffisant = insuffisant;
@@ -165,12 +197,11 @@ export function analyserOuverture(cours, parties, mv, ana) {
   const mieux = out.variantes.filter(v => v.solide).sort((a, b2) => b2.vic - a.vic).slice(0, 1);
   mieux.forEach(v => fortes.push({ t: `Variante ${v.lib} : ${v.vic} % de victoires sur ${v.n} parties.`, s: 'toutes' }));
   if (out.sortie && out.sortie.moy >= 52) fortes.push({ t: `Tu sors de l’ouverture avec ${out.sortie.moy} % de chances de gagner en moyenne.`, s: 'sf' });
-  if (R.some(r => r.id === 'roque-ok')) fortes.push({ t: 'Tu roques à temps.', s: 'toutes' });
   if (out.ouvertureFautes && out.ouvertureFautes.n >= 8 && out.ouvertureFautes.g + out.ouvertureFautes.e <= out.ouvertureFautes.n * 0.1) fortes.push({ t: 'Très peu d’erreurs graves avant le 15e coup.', s: 'sf' });
-  R.filter(r => !r.ok).forEach(r => faibles.push(r.titre));
+  R.filter(r => !r.ok && !r.obs).forEach(r => faibles.push(r.titre));
   const pire = out.variantes.filter(v => v.probleme).sort((a, b2) => b2.aperdre - a.aperdre)[0] || null;
   if (pire) faibles.push(`Variante ${pire.lib} : ${pire.def} % de défaites sur ${pire.n} parties.`);
-  out.synth = { fortes, faibles, pire, freq: R.find(r => /^rec|^precoces/.test(r.id)) || null, prio: R.find(r => !r.ok) || null,
+  out.synth = { fortes, faibles, pire, freq: R.find(r => /^rec|^precoces/.test(r.id)) || null, prio: R.find(r => !r.ok && !r.obs) || null,
     maitrise: { lignesTravaillees: null, partiesSansGrave: out.ouvertureFautes ? `${out.ouvertureFautes.aucune + out.ouvertureFautes.i} sur ${out.ouvertureFautes.n}` : null } };
   return out;
 }
