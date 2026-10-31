@@ -497,6 +497,8 @@ details.plat-det summary:after{content:'';width:8px;height:8px;margin-left:8px;b
 .suivi{margin:8px 0 0}
 .carte{display:grid;gap:12px;margin-top:14px}
 .carte-n{font-size:13px;color:var(--doux)}
+.fiche-panneau > .carte-n{padding:10px 4px 6px}
+.comp-detail{margin:8px 0 0;padding-left:18px;font-size:14px;color:var(--doux)}
 .carte-titre{font-size:20px}
 .carte-texte{font-size:16px;line-height:1.55}
 .carte-nav{display:flex;justify-content:space-between;gap:10px;margin-top:6px}
@@ -509,3 +511,17 @@ details.plat-det summary:after{content:'';width:8px;height:8px;margin-left:8px;b
 .ctx{font-size:14.5px;color:var(--doux)}
 
 .rep-choix[hidden],[hidden].rep-choix{display:none}
+/* Corrections de la recette : exercice sans pastilles ni sous-titre (la question et l'action suivante tiennent à l'écran), bouton « Suivant » toujours accessible */
+.fiche.en-exo .suivi,.fiche.en-exo .fiche-coups{display:none}
+.fiche.en-exo .fiche-nom{font-size:19px;margin:0}
+.fiche.en-exo .fiche-vue{margin-bottom:0}
+.fiche.en-exo .carte{gap:8px;margin-top:6px}
+.fiche.en-exo .fiche-nav{margin-top:4px}
+.fiche-panneau .carte-nav.suite{position:sticky;bottom:0;z-index:5;padding:8px 0 10px;margin-top:0;background:var(--fond)}
+.retour.partiel{background:var(--teinte);color:var(--texte)}
+.retour.partiel p{color:var(--texte)}
+.qcm-nsp{justify-self:start;margin-top:2px}
+.qcm-opt{padding:10px 14px;min-height:42px}
+.rep-ligne.maitrisee{flex-wrap:wrap;gap:6px}
+.alerte-fragile{flex-basis:100%;color:var(--rose-t)}
+.qcm-nsp[hidden]{display:none}

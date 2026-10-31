@@ -42,15 +42,17 @@ export function parEmplacement(st, toutes) {
   });
 }
 
-/* recommandation : la fiche disponible la plus rencontrée dans tes parties, pour un emplacement sans ouverture en cours.
-   `nParties` : { idFiche: nombre de parties }. Renvoie null s'il n'y a rien de pertinent. */
+/* recommandation : pour chaque emplacement qui n'a pas encore deux ouvertures en apprentissage, la fiche disponible la plus rencontrée
+   dans tes parties (donc jamais une ouverture déjà en cours ou maîtrisée). Elle est proposée, jamais ajoutée seule.
+   `nParties` : { idFiche: nombre de parties }. */
 export function recommander(st, toutes, nParties) {
   const res = [];
   for (const s of SLOTS) {
     const fiches = toutes.filter(c => slotDe(c) === s.id);
-    if (fiches.some(c => etatDe(st, c.id) === 'cours')) continue;
-    const c = fiches.filter(f => etatDe(st, f.id) === 'dispo').sort((a, b) => (nParties[b.id] || 0) - (nParties[a.id] || 0))[0];
-    if (c && (nParties[c.id] || 0) > 0) res.push({ slot: s.id, id: c.id, n: nParties[c.id] });
+    const enCours = fiches.filter(c => etatDe(st, c.id) === 'cours').length;
+    if (enCours >= MAX_PAR_EMPLACEMENT) continue;
+    const c = fiches.filter(f => etatDe(st, f.id) === 'dispo' && (nParties[f.id] || 0) > 0).sort((a, b) => (nParties[b.id] || 0) - (nParties[a.id] || 0))[0];
+    if (c) res.push({ slot: s.id, id: c.id, n: nParties[c.id], enCours });
   }
   return res;
 }

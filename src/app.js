@@ -645,7 +645,7 @@ S.ouvTri = store.get('ec_ouv_tri', 'n');
 const TRIS = [['n', 'Plus jouées'], ['v', 'Taux de victoires'], ['a', 'Ordre alphabétique']];
 /* « Mon répertoire » (nouvelle vue, voir ouv-ui.js) ou « Bibliothèque » (les 12 fiches, consultation) */
 let OUV = null;
-const ouvUI = () => OUV || (OUV = creerOuvUI({ h, $, S, store, dateLocale, C, construirePlateau, flecheSvg, plateauJouable, partiesDuCours, stats, persoDe, pct, barreRes, legRes, profond, explicationDe, noeudExplication, ouvrirEntrain, ouvrirCours, entrainerLigne, preparerOuvertures, alerteDonnees, contenuDonnees, toast, meilleurCoup, vueOuvertures: () => vueOuvertures() }));
+const ouvUI = () => OUV || (OUV = creerOuvUI({ h, $, S, store, dateLocale, C, construirePlateau, flecheSvg, plateauJouable, partiesDuCours, stats, persoDe, pct, barreRes, legRes, profond, explicationDe, noeudExplication, ouvrirEntrain, ouvrirCours, entrainerLigne, preparerOuvertures, alerteDonnees, contenuDonnees, toast, meilleurCoup, profondFort, partiesPourReponses, vueOuvertures: () => vueOuvertures() }));
 function vueOuvertures() { return S.ouvMode === 'biblio' ? vueBibliotheque() : ouvUI().vueRepertoire(); }
 async function meilleurCoup(fen) {
   S.manuel++; moteur && moteur.stop();
@@ -1404,6 +1404,25 @@ async function profond(fen, joue) {
     const res = { rb, ra }; cachePq.set(k, res); return res;
   } finally { S.manuel = Math.max(0, S.manuel - 1); autoAnalyse(); }
 }
+/* seconde vérification, plus profonde, d'un coup refusé de justesse (exercices d'ouverture) */
+const cachePf = new Map();
+async function profondFort(fen, joue) {
+  const k = fen + '|' + joue; if (cachePf.has(k)) return cachePf.get(k);
+  S.manuel++; moteur && moteur.stop();
+  try {
+    const rb = await exclusif(() => getMoteur().evaluer(fen, { d: 16, cap: 4000 }));
+    let ra;
+    if (joue === rb.b) ra = rb;
+    else {
+      const r = essaiCoup(fen, joue);
+      if (r && r.c.isGameOver()) ra = { e: r.c.isCheckmate() ? (r.m.color === 'w' ? 10000 : -10000) : 0, pv: [], b: null };
+      else ra = await exclusif(() => getMoteur().evaluer(r.c.fen(), { d: 16, cap: 4000 }));
+    }
+    const res = { rb, ra }; cachePf.set(k, res); return res;
+  } finally { S.manuel = Math.max(0, S.manuel - 1); autoAnalyse(); }
+}
+/* tes parties d'une ouverture, avec les coups (SAN) et les fautes adverses repérées par l'analyse du début de partie */
+const partiesPourReponses = c => partiesDuCours(c).map(g => { const mv = S.mv.d[g.u]; if (!mv) return null; const o = opDe(g); return { m: mv.split(' '), ofa: o && o.ofa ? o.ofa : null }; }).filter(Boolean);
 const explicationDe = (R, fen, joue, voix) => expliquerCoup({ fen, joue, best: R.rb.b, pvApres: R.ra.pv || [], pvMeilleur: R.rb.pv || [], eAvant: R.rb.e, eApres: R.ra.e, voix });
 function noeudExplication(ex, o = {}) {
   const n = h('div', { class: 'pourquoi' });
