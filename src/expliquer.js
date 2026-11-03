@@ -110,9 +110,28 @@ function avantPostes(c, col) {
     return protege && !chassable;
   }).map(p => p.sq);
 }
-function foursMauvais(c, col) {
-  const ps = pionsDe(c, col);
-  return piecesDe(c, col).filter(p => p.type === 'b').filter(b => ps.filter(p => caseCouleur(p.sq) === caseCouleur(b.sq)).length >= 5 - 0).map(b => b.sq);
+/* « mauvais fou » : critère strict (pas de simple comptage de cases). Il faut ENSEMBLE : un fou déjà sorti de sa case de départ,
+   au moins 4 pions du même camp sur sa couleur, au moins 2 d'entre eux bloqués (case devant eux occupée) et au moins 2 de ses
+   4 diagonales coupées par un de ses propres pions à moins de 2 cases. Un fou moins mobile mais sans ces signes n'est PAS dit « mauvais ». */
+export function foursMauvais(c, col) {
+  const ps = pionsDe(c, col), dir = col === 'w' ? 1 : -1, dep = col === 'w' ? ['c1', 'f1'] : ['c8', 'f8'], res = [];
+  for (const b of piecesDe(c, col).filter(p => p.type === 'b' && !dep.includes(p.sq))) {
+    const meme = ps.filter(p => caseCouleur(p.sq) === caseCouleur(b.sq));
+    if (meme.length < 4) continue;
+    const bloques = meme.filter(p => { const r = +p.sq[1] + dir; return r >= 1 && r <= 8 && c.get(p.sq[0] + r); });
+    if (bloques.length < 2) continue;
+    let coupees = 0;
+    for (const [df, dr] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      for (let k = 1; k <= 2; k++) {
+        const f = FICH.indexOf(b.sq[0]) + df * k, r = +b.sq[1] + dr * k; if (f < 0 || f > 7 || r < 1 || r > 8) break;
+        const q = c.get(FICH[f] + r); if (!q) continue;
+        if (q.color === col && q.type === 'p') coupees++;
+        break;
+      }
+    }
+    if (coupees >= 2) res.push({ sq: b.sq, pions: meme.map(p => p.sq), bloques: bloques.map(p => p.sq) });
+  }
+  return res;
 }
 function abriRoi(c, col) { // nombre de pions devant le roi (roque : colonnes voisines, rangs 2 ou 3 pour les blancs)
   const k = piecesDe(c, col).find(p => p.type === 'k'); if (!k) return null;
@@ -162,18 +181,12 @@ function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, p
     if (gagne.length) ajoute(1.3, `Avec ${B}, ${voc.sujet} ${voc.v('obtenais', 'obtenaient')} un pion passé en ${gagne[0]} : un pion qu’aucun pion adverse ne peut plus arrêter.`);
   }
 
-  // activité des pièces
-  const mAv = mobilite(avant, col), mJ = mobilite(apresJoue, col), mB = apresMeilleur ? mobilite(apresMeilleur, col) : null;
-  if (mAv && mJ) {
-    const moved = mJ.par[m0.to];
-    const before = mAv.par[m0.from];
-    if (moved && before && moved.n + 3 <= before.n) ajoute(0.9, `${cap(laLe(m0.piece))} avait ${before.n} coups possibles en ${m0.from} et n’en a plus que ${moved.n} en ${m0.to} : ${il(m0.piece)} devient moins mobile.`);
-    const perdues = Object.entries(mAv.par).filter(([sq, v]) => sq !== m0.from && (mJ.par[sq] ? mJ.par[sq].n + 3 <= v.n : false));
-    if (perdues.length) { const [sq, v] = perdues[0]; ajoute(0.8, `${cap(laLe(v.type))} en ${sq} perd en mobilité (${v.n} coups possibles puis ${mJ.par[sq].n}) : ${voc.coup} lui ferme des cases.`); }
-    if (mB && mB.total - mJ.total >= 4) ajoute(0.6 + Math.min(0.6, (mB.total - mJ.total) / 20), `Avec ${B}, les cavaliers, fous, tours et dame ${voc.dePieces} auraient plus de coups possibles (${mB.total} au lieu de ${mJ.total}).`);
+  // fou gêné par ses propres pions (critère de structure, jamais le seul nombre de cases)
+  {
+    const fAv = foursMauvais(avant, col).map(x => x.sq);
+    const fJ = foursMauvais(apresJoue, col).filter(x => !fAv.includes(x.sq));
+    if (fJ.length && (m0.piece === 'b' || !fAv.length)) ajoute(0.7, `Après ${S}, ${voc.p('b')} en ${fJ[0].sq} est gêné par ses propres pions (${fJ[0].bloques.join(', ')} sont bloqués, sur des cases de sa couleur) : ses diagonales sont coupées. Ce n’est pas définitif : un coup de pion ou un échange peut le libérer.`);
   }
-  const mOAv = mobilite(avant, O), mOJ = mobilite(apresJoue, O);
-  if (mOAv && mOJ && mOJ.total - mOAv.total >= 5) ajoute(0.6, `Après ${S}, ${voc.piecesAdv} (cavaliers, fous, tours, dame) ont plus de coups possibles (${mOAv.total} puis ${mOJ.total}).`);
 
   // colonnes ouvertes, avant-postes, fous
   if (apresMeilleur) {
@@ -183,8 +196,8 @@ function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, p
     const aB = avantPostes(apresMeilleur, col), aJ = avantPostes(apresJoue, col);
     const nouvA = aB.filter(sq => !aJ.includes(sq));
     if (nouvA.length) ajoute(1.0, `Avec ${B}, ${voc.sujet} ${voc.v('installes', 'installent')} un cavalier en ${nouvA[0]} : il est protégé par un pion et aucun pion adverse ne peut le chasser (avant-poste).`);
-    const fB = foursMauvais(apresMeilleur, col).length, fJ = foursMauvais(apresJoue, col).length;
-    if (fJ > fB) ajoute(0.5, `${voc.P('b')} reste un « mauvais fou » (au moins 5 pions ${voc.sien} sur sa couleur), ce que le meilleur coup évitait.`);
+    const fB = foursMauvais(apresMeilleur, col).map(x => x.sq), fJ2 = foursMauvais(apresJoue, col).filter(x => !fB.includes(x.sq));
+    if (fJ2.length) ajoute(0.5, `${voc.P('b')} en ${fJ2[0].sq} reste gêné par ses propres pions (${fJ2[0].bloques.join(', ')} bloqués, sur sa couleur), ce que ${B} évitait.`);
   }
   const aAv = avantPostes(avant, O), aJo = avantPostes(apresJoue, O);
   if (aJo.length > aAv.length) ajoute(1.0, `Après ${S}, ${voc.adv} ${voc.v('peut', 'peuvent')} installer un cavalier en ${aJo.find(sq => !aAv.includes(sq))} sans qu’un pion ${voc.sien} puisse le chasser.`);
@@ -208,9 +221,99 @@ function raisonsPositionnelles({ avant, apresJoue, apresMeilleur, m0, mb, col, p
   return R.sort((a, b) => b.poids - a.poids).map(x => x.texte);
 }
 
+/* ---------- vérification d'une variante du moteur ----------
+   Le moteur donne une suite probable (PV), pas une suite obligatoire. On la rejoue coup par coup avec chess.js : un coup
+   illégal coupe la variante ; le matériel est recompté après chaque coup ; un motif tactique n'est annoncé que si la suite
+   rejouée le confirme (gain de matériel net, une fois les échanges terminés). */
+function rejouer(fen, pv, max = 6) {
+  const S = []; if (!pv || !pv.length) return S;
+  let c; try { c = new Chess(fen); } catch { return S; }
+  for (const u of pv.slice(0, max)) {
+    const av = new Chess(c.fen()), nLegaux = c.moves().length; let m;
+    try { m = c.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] }); } catch { break; }
+    S.push({ m, av, c: new Chess(c.fen()), nLegaux });
+  }
+  return S;
+}
+function bilanVariante(fen, pv, col, max = 6) {
+  const S = rejouer(fen, pv, max); if (!S.length) return null;
+  const m0 = materiel(new Chess(fen), col);
+  const bal = S.map(s => materiel(s.c, col) - m0);
+  let kc = -1; S.forEach((s, i) => { if (s.m.captured || s.m.promotion) kc = i; });
+  let incertain = false;
+  if (kc >= 0 && kc === S.length - 1) { const s = S[kc]; incertain = !s.c.isGameOver() && s.c.attackers(s.m.to, autre(s.m.color)).length > 0; }
+  const nCaptures = S.filter(s => s.m.captured).length;
+  return { S, bal, kc, gain: kc >= 0 ? bal[kc] : 0, minBal: Math.min(0, ...bal), incertain, nCaptures, mat: S[S.length - 1].c.isCheckmate(), fen };
+}
+/* « 4.Nxe5 Nxe4 5.Nxf7 » */
+function numerote(fen, S, max = 5) {
+  const f = fen.split(' '); let n = +f[5] || 1; const out = [];
+  S.slice(0, max).forEach((s, i) => { if (s.m.color === 'w') out.push(`${n}.${s.m.san}`); else { out.push((i === 0 ? `${n}…` : '') + s.m.san); n++; } });
+  return out.join(' ');
+}
+/* pièces adverses clouées au roi par la position `c` (le roi serait en échec si la pièce partait) */
+function clouees(c, col) { // col = camp qui cloue
+  const O = autre(col), roi = piecesDe(c, O).find(p => p.type === 'k'); if (!roi || c.isCheck()) return [];
+  const res = [];
+  for (const p of piecesDe(c, O).filter(p => p.type !== 'k')) {
+    const t = new Chess(c.fen()); t.remove(p.sq);
+    if (t.isAttacked(roi.sq, col)) res.push(p);
+  }
+  return res;
+}
+/* motifs tactiques de `col` dans la variante, SEULEMENT s'ils sont confirmés par la suite rejouée */
+function motifs(bil, col) {
+  const R = []; if (!bil || bil.incertain || bil.gain < 1) return R;
+  const { S } = bil, O = autre(col);
+  S.forEach((s, i) => {
+    if (s.m.color !== col) return;
+    // fourchette : la pièce jouée attaque 2 pièces (≥ 3 points ou roi) et la suite prend l'une d'elles
+    const cb = cibles(s.c, s.m.to, O);
+    if (cb.length >= 2) {
+      const j = S.findIndex((t, k) => k > i && t.m.color === col && t.m.captured && cb.some(x => x.sq === t.m.to && x.type === t.m.captured));
+      if (j >= 0) R.push({ type: 'fourchette', texte: `${s.m.san} attaque deux pièces à la fois : ${cb.map(x => (x.type === 'k' ? 'le roi' : un(x.type)) + ' en ' + x.sq).join(' et ')}. Dans la suite calculée, l’adversaire n’en sauve qu’une et ${S[j].m.san} prend ${laLe(S[j].m.captured)} en ${S[j].m.to}.`, lecon: 'Une pièce qui attaque deux cibles à la fois (fourchette) force l’adversaire à en abandonner une. Avant de jouer, cherche si l’une de tes pièces peut en attaquer deux d’un coup, et regarde si l’adversaire peut le faire contre toi.' });
+    }
+    // clouage nouveau, confirmé par la prise de la pièce clouée
+    const apres = clouees(s.c, col).filter(p => !clouees(s.av, col).some(q => q.sq === p.sq));
+    for (const p of apres) {
+      const j = S.findIndex((t, k) => k > i && t.m.color === col && t.m.captured && t.m.to === p.sq);
+      if (j >= 0) { R.push({ type: 'clouage', texte: `${s.m.san} cloue ${laLe(p.type)} adverse en ${p.sq} : s’${il(p.type)} bougeait, le roi serait en échec. Dans la suite calculée, ${S[j].m.san} le prend ensuite.`, lecon: 'Une pièce clouée devant son roi ne peut pas bouger : c’est une cible facile. Regarde si tu peux clouer une pièce adverse, et si l’une des tiennes l’est.' }); break; }
+    }
+    // échec à la découverte
+    if (/\+/.test(s.m.san) && s.c.isCheck()) {
+      const roi = piecesDe(s.c, O).find(p => p.type === 'k');
+      if (roi && !s.c.attackers(roi.sq, col).includes(s.m.to) && S.some((t, k) => k > i && t.m.color === col && t.m.captured))
+        R.push({ type: 'decouverte', texte: `${s.m.san} dévoile une attaque : en bougeant, la pièce ouvre la ligne d’une autre pièce sur le roi adverse (échec à la découverte). L’adversaire doit répondre à l’échec, ce qui permet la suite.`, lecon: 'Un échec « à la découverte » oblige l’adversaire à réagir pendant que la pièce qui a bougé fait autre chose.' });
+    }
+    // défenseur éliminé : la pièce prise défendait la case de la capture suivante
+    if (s.m.captured) {
+      const j = S.findIndex((t, k) => k > i && t.m.color === col && t.m.captured && t.m.to !== s.m.to && s.av.attackers(t.m.to, O).includes(s.m.to) && !s.c.attackers(t.m.to, O).includes(s.m.to));
+      if (j >= 0 && !R.some(x => x.type === 'fourchette')) R.push({ type: 'defenseur', texte: `${s.m.san} élimine ${laLe(s.m.captured)} qui défendait ${laLe(S[j].m.captured)} en ${S[j].m.to} : sans ce défenseur, ${S[j].m.san} devient possible.`, lecon: 'Avant de croire qu’une pièce est bien protégée, regarde si son défenseur peut être pris ou chassé.' });
+    }
+  });
+  return R;
+}
+/* texte de la variante (pour le coup du moteur ou la suite d'un coup joué) ; `qui` : camp dont on parle */
+function decrire(fen, bil, col, voc, tien) {
+  const L = [], pour = tien ? 'pour toi' : `pour ${col === 'w' ? 'les blancs' : 'les noirs'}`;
+  const { S } = bil; const tour = S.filter(s => s.m.color !== col);
+  if (S.length >= 2) {
+    const forces = tour.length && tour.every(s => s.nLegaux === 1);
+    L.push(`Variante calculée par le moteur : ${numerote(fen, S, Math.max(5, bil.kc + 1))}. ${forces ? 'Les réponses de l’adversaire y sont toutes obligatoires (un seul coup légal).' : 'C’est la suite que le moteur juge la plus probable, pas une suite obligatoire : l’adversaire peut jouer autre chose.'}`);
+  }
+  if (bil.mat) L.push(`Cette variante se termine par échec et mat (${S[S.length - 1].m.san}).`);
+  else if (bil.nCaptures) {
+    if (bil.incertain) L.push('La variante s’arrête sur une capture qui peut être reprise : le gain n’est pas confirmé.');
+    else if (bil.gain >= 1) L.push(`Une fois les échanges terminés dans cette variante, le matériel est de +${bil.gain} ${pour} (pion 1, cavalier ou fou 3, tour 5, dame 9).`);
+    else if (bil.gain === 0 && bil.nCaptures >= 2) L.push('Dans cette variante, chaque pièce prise est reprise : les échanges se compensent et le matériel reste égal.');
+    else if (bil.gain <= -1) L.push(`Dans cette variante, le matériel est de ${bil.gain} ${pour} une fois les échanges terminés.`);
+  }
+  return L;
+}
+
 /* explication du MEILLEUR coup (voix neutre : valable pour les deux camps) */
-export function pourquoiMeilleur(fen, best, pv, eMoi, ctx = {}) {
-  const r = essai(fen, best); if (!r) return [];
+function detailMeilleur(fen, best, pv, eMoi, ctx = {}) {
+  const r = essai(fen, best); if (!r) return null;
   const { c, m } = r; const col = m.color; const L = [];
   // voix : `ctx.voix` ('tu' = coup du joueur) ou `ctx.camp` (couleur du joueur) ; sans indication, on parle du joueur
   const tien = ctx.voix ? ctx.voix === 'tu' : (ctx.camp ? col === ctx.camp : true);
@@ -218,10 +321,14 @@ export function pourquoiMeilleur(fen, best, pv, eMoi, ctx = {}) {
   const sesPieces = tien ? 'tes pièces' : `les pièces ${cotes}`;
   const avant = new Chess(fen);
   if (eMoi >= 9000) L.push(`il mène à un mat en ${10000 - eMoi} coup${10000 - eMoi > 1 ? 's' : ''}.`);
+  const bil = pv && pv.length && pv[0] === best ? bilanVariante(fen, pv, col) : null;
   if (m.captured) {
-    const defs = avant.attackers(m.to, autre(col)).length;
-    // gain / échange de valeur égale / perte : seule la valeur nominale est comparée, avant toute reprise
-    L.push(`il prend ${laLe(m.captured)} en ${m.to}` + (defs === 0 ? `, qui n’était pas défendu${fe(m.captured)}.` : V[m.captured] > V[m.piece] ? ` : ${il(m.captured)} vaut plus que ${laLe(m.piece)} qui ${FEM[m.captured] ? 'la' : 'le'} prend.` : V[m.captured] === V[m.piece] ? ' : échange de pièces de même valeur.' : '.'));
+    const defs = avant.attackers(m.to, autre(col)).length, cible = `${laLe(m.captured)} en ${m.to}`;
+    if (bil) L.push(`il prend ${cible}.`); // le bilan réel (reprises comprises) vient de la variante vérifiée, plus bas
+    else if (defs === 0) L.push(`il prend ${cible}, qui n’était pas défendu${fe(m.captured)}.`);
+    else if (V[m.captured] > V[m.piece]) L.push(`il prend ${cible} : même si l’adversaire reprend, ${il(m.captured)} vaut plus que ${laLe(m.piece)} qui ${FEM[m.captured] ? 'la' : 'le'} prend (bilan du premier échange : +${V[m.captured] - V[m.piece]}).`);
+    else if (V[m.captured] === V[m.piece]) L.push(`il prend ${cible} : si l’adversaire reprend, c’est un échange de pièces de même valeur. Sans suite calculée par le moteur, on ne peut pas annoncer de gain.`);
+    else L.push(`il prend ${cible}, mais ${il(m.captured)} est défendu${fe(m.captured)} : l’adversaire peut reprendre. Sans suite calculée par le moteur, on ne peut pas annoncer de gain.`);
   }
   if (/#/.test(m.san)) L.push('c’est échec et mat.');
   else if (/\+/.test(m.san)) L.push('il met le roi adverse en échec et l’oblige à réagir.');
@@ -241,8 +348,6 @@ export function pourquoiMeilleur(fen, best, pv, eMoi, ctx = {}) {
   }
   const protegees = piecesDe(c, col).filter(p => p.type !== 'k' && p.sq !== m.to && c.attackers(p.sq, autre(col)).length && c.attackers(p.sq, col).includes(m.to) && !avant.attackers(p.sq, col).length);
   if (protegees.length) L.push(`il protège ${un(protegees[0].type)} en ${protegees[0].sq}, qui était menacé${fe(protegees[0].type)}.`);
-  const mAv = mobilite(avant, col), mAp = mobilite(c, col);
-  if (mAv && mAp && mAp.total - mAv.total >= 3 && !m.captured) L.push(`il libère ${sesPieces} : cavaliers, fous, tours et dame ont ${mAp.total - mAv.total} coups possibles de plus qu’avant.`);
   if (m.piece === 'p' && ['d4', 'e4', 'd5', 'e5'].includes(m.to)) L.push(`il place un pion au centre, en ${m.to}.`);
   const avantMen = piecesEnPrise(avant, col), apresMen = piecesEnPrise(c, col);
   if (avantMen.length && apresMen.length < avantMen.length && !prises.length) L.push('il règle la menace qui pesait sur ses pièces (en défendant ou en échangeant).');
@@ -253,8 +358,19 @@ export function pourquoiMeilleur(fen, best, pv, eMoi, ctx = {}) {
   if (ctx.perteMat && ctx.perteMat <= -2) L.push(`il évite la perte de matériel que ${ctx.joue} permet (environ ${points(-ctx.perteMat)}).`);
   if (!L.length && ctx.finale && m.piece === 'k') L.push('en finale, le roi doit participer à la partie : ce coup le rapproche de l’action.');
   // pas de phrase de remplissage : si aucune règle vérifiée ne s’applique, la liste reste vide
-  return L;
+  const V2 = [], M = bil ? motifs(bil, col) : [];
+  if (bil) {
+    V2.push(...decrire(fen, bil, col, null, tien));
+    if (bil.minBal <= -2 && bil.S[0].m.color === col) {
+      if (!bil.nCaptures || bil.incertain) { /* rien de sûr à dire */ }
+      else if (bil.gain >= 0) V2.push(`Ce coup donne d’abord ${points(-bil.minBal)} de matériel, que la variante récupère ensuite : c’est un sacrifice dont le retour est vérifié.`);
+      else if (eMoi > -50) V2.push(`Ce coup donne du matériel (${bil.gain}) sans le récupérer dans la variante, mais le moteur juge la position équivalente ou meilleure : la compensation n’est pas matérielle et dépend de la suite. Cette explication ne la détaille pas.`);
+    }
+    V2.push(...M.map(x => x.texte));
+  }
+  return { L, V: V2, M, bil, col, tien, m };
 }
+export function pourquoiMeilleur(fen, best, pv, eMoi, ctx = {}) { const d = detailMeilleur(fen, best, pv, eMoi, ctx); return d ? d.L.concat(d.V) : []; }
 
 /* explication d'un coup joué */
 export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eApres, voix = 'tu' }) {
@@ -268,7 +384,11 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
   const wAv = winPct(mien(eAvant)), wAp = winPct(mien(eApres));
   const finaleCtx = valeurNonPions(avant) <= 8;
 
-  if (bonne) return { titre: `${m0.san} est le meilleur coup`, lignes: [], meilleur: pourquoiMeilleur(fen, best, pvMeilleur, mien(eAvant), { finale: finaleCtx, voix }).map(cap), san: m0.san };
+  if (bonne) {
+    const d = detailMeilleur(fen, best, pvMeilleur, mien(eAvant), { finale: finaleCtx, voix });
+    const meilleur = d ? d.L.concat(d.V).map(cap) : [];
+    return { titre: `${m0.san} est le meilleur coup`, lignes: [], meilleur, san: m0.san, etapes: etapesDe({ voc: S, m0, bonne: true, d, eAvant: mien(eAvant), eApres: mien(eApres), lignes: [], statiques: d ? d.L.map(cap) : [], cause: null }) };
+  }
 
   // 1. mat subi ou mat manqué
   if (mien(eApres) <= -9000) {
@@ -280,8 +400,8 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
     lignes.push(`Un mat en ${n} coup${n > 1 ? 's' : ''} existait avec ${sanDe(fen, best)}, et ${S.coup} le laisse passer.`);
   }
 
-  // 2. conséquence matérielle sur la suite proposée par le moteur
-  let perteMat = 0, premiereCapture = null, fourchette = null, suite = '';
+  // 2. conséquence matérielle sur la suite proposée par le moteur (rejouée et vérifiée)
+  let perteMat = 0, premiereCapture = null, fourchette = null, suite = '', bilAdv = null, motifsAdv = [];
   if (pvApres && pvApres.length) {
     const c1 = new Chess(cApres.fen()); const avantMat = materiel(avant, col);
     const mvs = [];
@@ -289,17 +409,16 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
     perteMat = materiel(c1, col) - avantMat;
     const idx = mvs.findIndex(m => m.color !== col && m.captured);
     if (idx >= 0) premiereCapture = { m: mvs[idx], avant: mvs.slice(0, idx) };
-    if (mvs.length) {
-      const t0 = essai(cApres.fen(), uci(mvs[0]));
-      if (t0 && !mvs[0].captured) { const cb = cibles(t0.c, mvs[0].to, col); if (cb.length >= 2) fourchette = { m: mvs[0], cb }; }
-    }
-    suite = sanLigne(cApres.fen(), pvApres, 4);
+    // motifs de l'adversaire : seulement s'ils sont confirmés par la variante (et par un gain net pour lui)
+    bilAdv = bilanVariante(cApres.fen(), pvApres, autre(col));
+    if (bilAdv && !expliqueMat) motifsAdv = motifs(bilAdv, autre(col));
+    fourchette = motifsAdv.find(x => x.type === 'fourchette') || null;
+    suite = bilAdv ? numerote(cApres.fen(), bilAdv.S, Math.max(4, bilAdv.kc + 1)) : '';
   }
+  const incertainPerte = !!(bilAdv && bilAdv.incertain);
   if (perteMat <= -1 && !expliqueMat) {
-    if (fourchette) {
-      const f = fourchette;
-      lignes.push(`Après ${m0.san}, ${un(f.m.piece)} adverse peut aller en ${f.m.to} (${f.m.san}) et attaquer deux pièces à la fois : ${f.cb.map(x => (x.type === 'k' ? S.roi : S.p(x.type)) + ' en ' + x.sq).join(' et ')}. ${S.Sujet} ${S.v('ne peux', 'ne peuvent')} pas sauver les deux.`);
-    } else if (premiereCapture) {
+    if (fourchette) lignes.push(`Après ${m0.san} : ${fourchette.texte}`);
+    else if (premiereCapture) {
       const { m, avant: pre } = premiereCapture;
       const cc = new Chess(cApres.fen()); for (const p of pre) cc.move(p.san);
       const defs = cc.attackers(m.to, col).length;
@@ -311,8 +430,11 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
         else if (V[m.piece] < V[m.captured]) lignes.push(`Même défendu${fe(m.captured)}, ${il(m.captured)} est pris par ${un(m.piece)} qui vaut moins : ${points(V[m.captured])} perdus pour ${points(V[m.piece])} au mieux.`);
       }
     }
-    if (suite) lignes.push(`Suite probable : ${suite}.`);
-    lignes.push(`Bilan : environ ${points(-perteMat)} de matériel perdu${-perteMat > 1 ? 's' : ''} au total (pion 1, cavalier ou fou 3, tour 5, dame 9).`);
+    if (!fourchette && motifsAdv.length) lignes.push(...motifsAdv.map(x => x.texte));
+    if (suite) lignes.push(`Suite probable : ${suite}. Ce n’est pas une suite obligatoire : l’adversaire peut jouer autre chose.`);
+    lignes.push(incertainPerte
+      ? `Bilan provisoire : environ ${points(-perteMat)} de matériel perdu${-perteMat > 1 ? 's' : ''} si cette suite se confirme (la variante s’arrête sur une capture qui peut être reprise ; pion 1, cavalier ou fou 3, tour 5, dame 9).`
+      : `Bilan : environ ${points(-perteMat)} de matériel perdu${-perteMat > 1 ? 's' : ''} d’après cette variante (pion 1, cavalier ou fou 3, tour 5, dame 9).`);
   }
 
   // 3. cause : ce que le coup a changé
@@ -336,8 +458,13 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
     }
   }
 
+  // meilleur coup : variante vérifiée (sert aussi à signaler un gain matériel manqué)
+  const dB = best ? detailMeilleur(fen, best, pvMeilleur, mien(eAvant), { perteMat, joue: m0.san, finale: finaleCtx, voix }) : null;
+  const gainManque = !!(dB && dB.bil && !dB.bil.incertain && dB.bil.nCaptures && dB.bil.gain >= 1 && perteMat > -1 && !expliqueMat);
+  if (gainManque) lignes.push(`Avec ${sanDe(fen, best)}, une suite calculée rapporte +${dB.bil.gain} de matériel ; ${m0.san} laisse passer cette occasion.`);
+
   // 4. plan positionnel quand aucun matériel n'est en jeu
-  if (perteMat > -2 && !expliqueMat) {
+  if (perteMat > -2 && !expliqueMat && !gainManque) {
     const plyNum = (fen.split(' ')[5] | 0) * 2 - (col === 'w' ? 1 : 0);
     const rb = best ? essai(fen, best) : null;
     const apJ = suivreEchanges(cApres, pvApres, !!m0.captured), apB = rb ? suivreEchanges(rb.c, (pvMeilleur || []).slice(1), !!rb.m.captured) : null;
@@ -349,14 +476,44 @@ export function expliquerCoup({ fen, joue, best, pvApres, pvMeilleur, eAvant, eA
       if (roi && (dv.roiAuCentre || ['g', 'h'].includes(roi.sq[0]))) raisons.unshift(`Les pions f, g et h protègent ${S.roi} après le roque : les avancer ainsi peut l’affaiblir et ouvrir des lignes pour l’attaque adverse.`);
     }
     if (m0.piece === 'q' && plyNum <= 14) { const at = cApres.attackers(m0.to, autre(col)); if (at.length) raisons.push(`La dame en ${m0.to} est attaquée par ${un(cApres.get(at[0]).type)} adverse : ${S.adv} peut gagner du temps en la chassant.`); }
-    if (m0.piece === 'n' && /^[ah]/.test(m0.to)) raisons.push('Un cavalier au bord de l’échiquier a au plus 4 coups possibles (contre 8 au centre).');
+    if (m0.piece === 'n' && /^[ah]/.test(m0.to)) raisons.push('Un cavalier au bord de l’échiquier a en général moins de possibilités qu’au centre.');
     if (rb && rb.m.captured && !m0.captured) raisons.push(`Une bonne capture était possible : ${sanDe(fen, best)} prenait ${laLe(rb.m.captured)}.`);
     const gardees = raisons.slice(0, lignes.length ? 1 : 3);
     if (gardees.length) lignes.push(...gardees);
     else if (!lignes.length) lignes.push('Aucune pièce n’est perdue tout de suite, et la différence est subtile : le moteur juge simplement la position de l’adversaire un peu plus confortable après ce coup.');
   }
 
-  if (Math.abs(wAv - wAp) >= 1) lignes.push(`${S.chances} passent d’environ ${Math.round(wAv)} % à ${Math.round(wAp)} %.`);
-  const meilleur = best ? pourquoiMeilleur(fen, best, pvMeilleur, mien(eAvant), { perteMat, joue: m0.san, finale: finaleCtx, voix }).map(cap) : [];
-  return { titre: `Pourquoi ${m0.san} est moins bon`, lignes, meilleur, san: best ? sanDe(fen, best) : null };
+  const dEcart = Math.abs(mien(eApres) - mien(eAvant));
+  const petit = dEcart < 30 && Math.abs(mien(eAvant)) < 9000 && Math.abs(mien(eApres)) < 9000;
+  const lignePct = Math.abs(wAv - wAp) >= 1 ? `Estimation (un repère, pas une vraie probabilité de gagner) : en ${S.tu ? 'ta' : `la`} faveur${S.tu ? '' : ' ' + S.deCamp}, elle passe d’environ ${Math.round(wAv)} à ${Math.round(wAp)} sur 100.` : null;
+  if (lignePct) lignes.push(lignePct);
+  if (petit && !perteMat) lignes.push('L’écart est très faible : on ne peut pas conclure que l’un des deux coups est clairement meilleur.');
+  const meilleur = dB ? dB.L.concat(dB.V).map(cap) : [];
+  const cause = lignes.filter(l => l !== lignePct && !/^L’écart est très faible/.test(l));
+  return { titre: `Pourquoi ${m0.san} est moins bon`, lignes, meilleur, san: best ? sanDe(fen, best) : null,
+    etapes: etapesDe({ voc: S, m0, bonne: false, d: dB, best, fen, eAvant: mien(eAvant), eApres: mien(eApres), lignes, cause, lignePct, petit, perteMat, motifsAdv, statiques: dB ? dB.L.map(cap) : [] }) };
+}
+
+/* ---------- présentation en étapes (niveau 800–1000 Elo) : joué / manqué / pourquoi mieux / variante / résultat / leçon ----------
+   Chaque étape n'est produite que si on a une information vérifiée ; sinon elle est omise (jamais de remplissage). */
+function etapesDe({ voc, m0, bonne, d, best, fen, eAvant, eApres, lignes, cause, lignePct, petit, perteMat, motifsAdv, statiques }) {
+  const E = [], tu = voc.tu;
+  const joue = tu ? 'Tu as joué' : `${cap(voc.camp)} ont joué`;
+  E.push({ t: tu ? 'Ce que tu as joué' : 'Le coup joué', x: [`${joue} ${m0.san}${m0.captured ? ` (il prend ${laLe(m0.captured)} en ${m0.to})` : ''}.`, ...(bonne ? ['C’est le coup que le moteur recommande.'] : [])] });
+  if (!bonne && best) E.push({ t: tu ? 'Ce que tu as manqué' : 'Ce qui était mieux', x: [`Le moteur préférait ${sanDe(fen, best)}.`, ...(cause || []).slice(0, 3)] });
+  const pourquoi = statiques || [];
+  if (pourquoi.length) E.push({ t: 'Pourquoi c’est mieux', x: pourquoi.slice(0, 3) });
+  if (d && d.V && d.V.length) E.push({ t: 'La suite vérifiée', x: d.V.map(cap) });
+  else if (d && !d.bil) E.push({ t: 'La suite vérifiée', x: ['Le moteur n’a pas fourni de suite assez fiable pour la détailler ici : cette explication reste volontairement prudente.'] });
+  const res = [];
+  const bil = d && d.bil;
+  if (bil && !bil.incertain && bil.nCaptures) res.push(bil.gain >= 1 ? `Matériel : +${bil.gain} à la fin des échanges de la variante.` : bil.gain === 0 ? 'Matériel : égal à la fin des échanges de la variante.' : `Matériel : ${bil.gain} à la fin des échanges de la variante.`);
+  else if (!bonne && perteMat <= -1) res.push(`Matériel : environ ${-perteMat} point${-perteMat > 1 ? 's' : ''} perdu${-perteMat > 1 ? 's' : ''} avec ${m0.san}.`);
+  if (lignePct) res.push(lignePct);
+  if (petit && !perteMat) res.push('Écart très faible : ne pas en tirer de conclusion tranchée.');
+  else if (Math.abs(eApres) < 30 && Math.abs(eAvant) < 30) res.push('Position proche de l’égalité selon le moteur : un avantage matériel ou positionnel n’est pas établi.');
+  if (res.length) E.push({ t: 'Le résultat', x: res });
+  const lecon = (d && d.M && d.M[0] && d.M[0].lecon) || (motifsAdv && motifsAdv[0] && motifsAdv[0].lecon) || null;
+  if (lecon) E.push({ t: 'À retenir', x: [lecon] });
+  return E;
 }

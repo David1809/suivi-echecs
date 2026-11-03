@@ -1427,6 +1427,10 @@ const explicationDe = (R, fen, joue, voix) => expliquerCoup({ fen, joue, best: R
 function noeudExplication(ex, o = {}) {
   const n = h('div', { class: 'pourquoi' });
   if (o.titre || ex.titre) n.append(h('h4', {}, o.titre || ex.titre));
+  if (ex.etapes && ex.etapes.length && !o.sansMeilleur) { // présentation en étapes (joué / manqué / pourquoi / variante / résultat / leçon)
+    ex.etapes.forEach(e => { n.append(h('h4', {}, e.t)); e.x.forEach(t => n.append(h('p', {}, t))); });
+    return n;
+  }
   ex.lignes.forEach(t => n.append(h('p', {}, t)));
   if (!o.sansMeilleur && ex.meilleur.length) {
     n.append(h('h4', {}, ex.lignes.length ? `Le meilleur coup était ${ex.san}` : 'Pourquoi'));
